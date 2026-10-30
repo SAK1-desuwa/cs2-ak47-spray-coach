@@ -1,5 +1,9 @@
 # AK-47 Spray Coach (CS2)
 
+[![release](https://img.shields.io/github/v/release/SAK1-desuwa/cs2-ak47-spray-coach?color=f5a623)](../../releases)
+[![license](https://img.shields.io/github/license/SAK1-desuwa/cs2-ak47-spray-coach?color=4fa3ff)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-Windows%2010%2F11-8b97a6)](#)
+
 [中文](README.md) | **English**
 
 A 47 KB Windows tray-free utility that walks you through the **CS2 AK-47 spray pattern** in real time: hold the left mouse button and it cues — by voice and a big arrow — **which way to drag your mouse**, one round every 0.1 s (600 RPM). Release to stop. Each hold speeds up the voice a notch.
@@ -8,7 +12,7 @@ A 47 KB Windows tray-free utility that walks you through the **CS2 AK-47 spray p
 
 ## Download
 
-Grab `AK47压枪提醒器.exe` from [Releases](../../releases) and double-click it.
+Grab **`AK47SprayCoach.exe`** from [Releases](../../releases) and double-click it (the window title is in Chinese).
 
 - Single executable, **no dependencies** (.NET Framework 4.x ships with Windows 10/11)
 - No network access, no registry writes, no game memory reads, no input injection
