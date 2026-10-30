@@ -37,17 +37,26 @@ Directions are always **where the mouse goes** (= opposite of where the pattern 
 
 - **Hold LMB to start, release to stop** — global mouse listener, so it works while you're in-game (passive only, nothing injected)
 - **Progressive voice speed**: +1 per completed spray (cap +6), toggleable
-- **Lead time** 0 / 50 / 80 / 120 / 160 ms (default 80 ms) to compensate human reaction delay
+- **Gunshot SFX** (v1.1): a procedurally synthesised AK report on every round — 3 styles (standard / heavy / crisp) with volume control
+- **Multiple voice characters** (v1.1): presets `standard / loli (high-pitched) / girl / deep male / robot`, plus fine pitch (-50%…+60%) and rate (0…6); or pick any SAPI voice installed on the system
+- **Lead time 0–3000 ms** (v1.1), no fixed steps
+- **Custom wallpaper** (v1.1): any png/jpg as the window background, cover-fit with adjustable dimming (0–92%)
+- Custom WAV for the segment-change cue
 - 30-round cue strip, 6-segment timeline, spray-pattern diagram, cheat-sheet table
+- `F2` opens the settings window; everything is stored in `settings.ini` next to the exe
 - Dual TTS engine: in-process SAPI, falling back to a hidden PowerShell voice helper
+
+![settings](docs/settings.png)
 
 ## Verify it yourself
 
 ```bat
-AK47压枪提醒器.exe --selftest self-test.txt   :: data + timeline consistency
-AK47压枪提醒器.exe --demo 1500 --diag demo.log :: walks a real 1.5 s spray
-AK47压枪提醒器.exe --say 左下 --diag say.txt   :: TTS check
-AK47压枪提醒器.exe --shot ui.png --at 1.35     :: render the UI to PNG
+AK47SprayCoach.exe --selftest self-test.txt     :: data + timeline consistency
+AK47SprayCoach.exe --demo 1500 --diag demo.log  :: walks a real 1.5 s spray
+AK47SprayCoach.exe --say 左下 --diag say.txt     :: TTS check
+AK47SprayCoach.exe --shot ui.png --at 1.35       :: render the UI to PNG
+AK47SprayCoach.exe --sounds sounds               :: dump the synthesised SFX
+AK47SprayCoach.exe --shot-settings settings.png  :: render the settings dialog
 ```
 
 ## Build
