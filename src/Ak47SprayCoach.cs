@@ -131,16 +131,174 @@ namespace Ak47Spray
         public static readonly Font FStatus = new Font("Microsoft YaHei UI", 11.5f, FontStyle.Regular, GraphicsUnit.Pixel);
     }
 
-    // ---------- 语音：双引擎（进程内 SAPI COM → 失败则改用 PowerShell 语音助手） ----------
+    // ---------- 设置 ----------
+    internal sealed class Cfg
+    {
+        public string Voice = "";        // 语音名（空 = 自动）
+        public int Preset = 0;           // 音色预设 0标准 1萝莉 2少女 3大叔 4机器人
+        public int Pitch = 0;            // 额外音调 -50..60 (%)
+        public int Rate = 0;             // 基础语速 0..6
+        public bool ShotOn = true;       // 射击音效
+        public int ShotStyle = 0;        // 0 标准 1 重低音 2 清脆
+        public int ShotVol = 70;         // 射击音量 0..100
+        public bool CueOn = true;        // 换段提示音
+        public string CueWav = "";       // 自定义提示音 wav
+        public int Lead = 80;            // 提前量 ms（0..3000，无上限菜单限制）
+        public string Wallpaper = "";    // 壁纸路径
+        public int Dim = 55;             // 壁纸暗化 0..90
+        public bool TopMost = true;
+        public bool Hook = true;
+        public bool Progressive = true;
+        public bool Sound = true;
+
+        public void Reset()
+        {
+            Voice = ""; Preset = 0; Pitch = 0; Rate = 0;
+            ShotOn = true; ShotStyle = 0; ShotVol = 70;
+            CueOn = true; CueWav = "";
+            Lead = 80; Wallpaper = ""; Dim = 55;
+            TopMost = true; Hook = true; Progressive = true; Sound = true;
+        }
+
+        public Cfg Clone()
+        {
+            Cfg c = new Cfg();
+            c.Voice = Voice; c.Preset = Preset; c.Pitch = Pitch; c.Rate = Rate;
+            c.ShotOn = ShotOn; c.ShotStyle = ShotStyle; c.ShotVol = ShotVol;
+            c.CueOn = CueOn; c.CueWav = CueWav;
+            c.Lead = Lead; c.Wallpaper = Wallpaper; c.Dim = Dim;
+            c.TopMost = TopMost; c.Hook = Hook; c.Progressive = Progressive; c.Sound = Sound;
+            return c;
+        }
+
+        public void CopyFrom(Cfg o)
+        {
+            Voice = o.Voice; Preset = o.Preset; Pitch = o.Pitch; Rate = o.Rate;
+            ShotOn = o.ShotOn; ShotStyle = o.ShotStyle; ShotVol = o.ShotVol;
+            CueOn = o.CueOn; CueWav = o.CueWav;
+            Lead = o.Lead; Wallpaper = o.Wallpaper; Dim = o.Dim;
+            TopMost = o.TopMost; Hook = o.Hook; Progressive = o.Progressive; Sound = o.Sound;
+        }
+
+        public void Load(string path)
+        {
+            try
+            {
+                if (!File.Exists(path)) return;
+                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                for (int i = 0; i < lines.Length; i++)
+                {
+                    string ln = lines[i].Trim();
+                    if (ln.Length == 0 || ln.StartsWith(";") || ln.StartsWith("#")) continue;
+                    int eq = ln.IndexOf('=');
+                    if (eq <= 0) continue;
+                    string k = ln.Substring(0, eq).Trim().ToLowerInvariant();
+                    string v = ln.Substring(eq + 1).Trim();
+                    switch (k)
+                    {
+                        case "voice": Voice = v; break;
+                        case "preset": Preset = i4(v, 0); break;
+                        case "pitch": Pitch = i4(v, 0); break;
+                        case "rate": Rate = i4(v, 0); break;
+                        case "shoton": ShotOn = b1(v); break;
+                        case "shotstyle": ShotStyle = i4(v, 0); break;
+                        case "shotvol": ShotVol = i4(v, 70); break;
+                        case "cueon": CueOn = b1(v); break;
+                        case "cuewav": CueWav = v; break;
+                        case "lead": Lead = i4(v, 80); break;
+                        case "wallpaper": Wallpaper = v; break;
+                        case "dim": Dim = i4(v, 55); break;
+                        case "topmost": TopMost = b1(v); break;
+                        case "hook": Hook = b1(v); break;
+                        case "progressive": Progressive = b1(v); break;
+                        case "sound": Sound = b1(v); break;
+                    }
+                }
+            }
+            catch { }
+            Sanitize();
+        }
+
+        public void Save(string path)
+        {
+            try
+            {
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("; AK-47 压枪提醒器 设置文件（可直接编辑）");
+                sb.AppendLine("voice=" + Voice);
+                sb.AppendLine("preset=" + Preset);
+                sb.AppendLine("pitch=" + Pitch);
+                sb.AppendLine("rate=" + Rate);
+                sb.AppendLine("shoton=" + (ShotOn ? 1 : 0));
+                sb.AppendLine("shotstyle=" + ShotStyle);
+                sb.AppendLine("shotvol=" + ShotVol);
+                sb.AppendLine("cueon=" + (CueOn ? 1 : 0));
+                sb.AppendLine("cuewav=" + CueWav);
+                sb.AppendLine("lead=" + Lead);
+                sb.AppendLine("wallpaper=" + Wallpaper);
+                sb.AppendLine("dim=" + Dim);
+                sb.AppendLine("topmost=" + (TopMost ? 1 : 0));
+                sb.AppendLine("hook=" + (Hook ? 1 : 0));
+                sb.AppendLine("progressive=" + (Progressive ? 1 : 0));
+                sb.AppendLine("sound=" + (Sound ? 1 : 0));
+                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+            }
+            catch { }
+        }
+
+        public void Sanitize()
+        {
+            if (Preset < 0 || Preset > 4) Preset = 0;
+            if (Pitch < -60) Pitch = -60;
+            if (Pitch > 80) Pitch = 80;
+            if (Rate < 0) Rate = 0;
+            if (Rate > 6) Rate = 6;
+            if (ShotStyle < 0 || ShotStyle > 2) ShotStyle = 0;
+            if (ShotVol < 0) ShotVol = 0;
+            if (ShotVol > 100) ShotVol = 100;
+            if (Lead < 0) Lead = 0;
+            if (Lead > 3000) Lead = 3000;
+            if (Dim < 0) Dim = 0;
+            if (Dim > 92) Dim = 92;
+        }
+
+        private static int i4(string s, int d)
+        {
+            int r;
+            if (int.TryParse(s, out r)) return r;
+            return d;
+        }
+        private static bool b1(string s)
+        {
+            return s == "1" || s.Equals("true", StringComparison.OrdinalIgnoreCase) || s.Equals("on", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    internal static class Presets
+    {
+        public static readonly string[] Names = new string[] { "标准", "萝莉音", "少女音", "大叔音", "机器人" };
+        public static readonly int[] PitchOff = new int[] { 0, 45, 25, -25, -15 };
+        public static readonly int[] RateOff = new int[] { 0, 1, 0, -1, 2 };
+        public static readonly string[] ShotNames = new string[] { "标准 AK", "重低音", "清脆" };
+    }
+
+    // ---------- 语音：双引擎（进程内 SAPI COM → 失败则改用 PowerShell 语音助手）+ SSML 变声 ----------
     internal sealed class VoiceOut
     {
+        private sealed class Req
+        {
+            public int Rate;
+            public int Pitch;
+            public string Word;
+            public Req(int r, int p, string w) { Rate = r; Pitch = p; Word = w; }
+        }
+
         private readonly Thread th;
-        private readonly Queue<string> q = new Queue<string>();
+        private readonly Queue<Req> q = new Queue<Req>();
         private readonly object gate = new object();
         private volatile bool ready;
         private volatile bool failed;
         private volatile bool stop;
-        private int rate;
 
         private Type spType;
         private object sp;
@@ -151,21 +309,30 @@ namespace Ak47Spray
         public string Engine = "";
         public string Banner = "";
         public bool Fallback;
+        public string[] Voices = new string[0];
+        public string WantVoice = "";
 
         public bool Ready { get { return ready; } }
         public bool Failed { get { return failed; } }
 
         private static readonly string[] ZhLangs = new string[] { "804", "404", "c04", "1004", "7804" };
 
-        // 语音助手：ASCII 指令 -> 中文（无中文语音时自动用英文），支持 RATE 调语速
+        // 语音助手：RATE / VOICE / X(ssml) 指令；同时把可用语音列表回给主程序
         private const string PsScript = @"Add-Type -AssemblyName System.Speech
 $s = New-Object System.Speech.Synthesis.SpeechSynthesizer
+$names = @()
 $zh = $false
+$picked = $false
 foreach ($v in $s.GetInstalledVoices()) {
-  if ($v.VoiceInfo.Culture.Name -like 'zh*') { $zh = $true; try { $s.SelectVoice($v.VoiceInfo.Name) } catch {}; break }
+  $nm = $v.VoiceInfo.Name
+  $names += $nm
+  if (-not $picked -and $v.VoiceInfo.Culture.Name -like 'zh*') {
+    $zh = $true
+    try { $s.SelectVoice($nm) } catch {}
+    $picked = $true
+  }
 }
-$w = @{ D = @('往下','down'); DR = @('右下','right down'); DL = @('左下','left down') }
-[Console]::Out.WriteLine('READY ' + $(if ($zh) { 'zh' } else { 'en' }))
+[Console]::Out.WriteLine('READY ' + $(if ($zh) { 'zh' } else { 'en' }) + '|' + ($names -join '|'))
 [Console]::Out.Flush()
 while ($true) {
   $l = [Console]::In.ReadLine()
@@ -173,11 +340,24 @@ while ($true) {
   $l = $l.Trim()
   if ($l.Length -eq 0) { continue }
   if ($l.StartsWith('RATE ')) { try { $s.Rate = [int]$l.Substring(5) } catch {} ; continue }
-  if ($w.ContainsKey($l)) {
-    $pair = $w[$l]
-    $word = $(if ($zh) { $pair[0] } else { $pair[1] })
-    $s.SpeakAsyncCancelAll()
-    $s.SpeakAsync($word)
+  if ($l.StartsWith('VOICE ')) {
+    try {
+      $want = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($l.Substring(6)))
+      $s.SelectVoice($want)
+    } catch {}
+    continue
+  }
+  if ($l.StartsWith('X ')) {
+    try {
+      $xml = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($l.Substring(2)))
+      $s.SpeakAsyncCancelAll()
+      try { $s.SpeakSsmlAsync($xml) }
+      catch {
+        $m = [regex]::Match($xml, '>([^<>]+)</prosody>')
+        if ($m.Success) { $s.SpeakAsync($m.Groups[1].Value) }
+      }
+    } catch {}
+    continue
   }
 }
 $s.Dispose()";
@@ -198,11 +378,24 @@ $s.Dispose()";
             {
                 if (ps != null)
                 {
-                    try { ps.StandardInput.Close(); } catch { }   // 关掉 stdin，助手会自己退出
-                    try { if (!ps.HasExited) ps.Kill(); } catch { } // 兜底，绝不留后台进程
+                    try { ps.StandardInput.Close(); } catch { }
+                    try { if (!ps.HasExited) ps.Kill(); } catch { }
                 }
             }
             catch { }
+        }
+
+        private static string Ssml(string word, int pitch, bool zh)
+        {
+            string p = (pitch >= 0 ? "+" : "") + pitch + "%";
+            string lang = zh ? "zh-CN" : "en-US";
+            return "<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xml:lang=\"" + lang + "\">" +
+                   "<prosody pitch=\"" + p + "\" rate=\"+0%\">" + word + "</prosody></speak>";
+        }
+
+        private static string B64(string s)
+        {
+            return Convert.ToBase64String(Encoding.UTF8.GetBytes(s));
         }
 
         /* ---------- 引擎 1：进程内 SAPI COM ---------- */
@@ -214,15 +407,16 @@ $s.Dispose()";
                 if (spType == null) return false;
                 sp = Activator.CreateInstance(spType);
 
-                // 探针：读写 Rate。坏掉的 SAPI 会在这里抛 SPERR_NOT_FOUND / MEMBERNOTFOUND
                 object r0 = spType.InvokeMember("Rate", BindingFlags.GetProperty, null, sp, new object[0]);
                 spType.InvokeMember("Rate", BindingFlags.SetProperty, null, sp, new object[] { Convert.ToInt32(r0) });
                 spType.InvokeMember("Volume", BindingFlags.SetProperty, null, sp, new object[] { 100 });
 
                 object toks = spType.InvokeMember("GetVoices", BindingFlags.InvokeMethod, null, sp, new object[] { "", "" });
                 int n = Convert.ToInt32(toks.GetType().InvokeMember("Count", BindingFlags.GetProperty, null, toks, new object[0]));
+                List<string> names = new List<string>();
                 object zhToken = null;
-                string firstDesc = "";
+                string zhDesc = "";
+                object wantToken = null;
                 for (int i = 0; i < n; i++)
                 {
                     object tok = toks.GetType().InvokeMember("Item", BindingFlags.GetProperty, null, toks, new object[] { i });
@@ -230,7 +424,7 @@ $s.Dispose()";
                     string lang = "";
                     try { desc = Convert.ToString(tok.GetType().InvokeMember("GetDescription", BindingFlags.InvokeMethod, null, tok, new object[] { 1 })); } catch { }
                     try { lang = Convert.ToString(tok.GetType().InvokeMember("GetAttribute", BindingFlags.InvokeMethod, null, tok, new object[] { "Language" })); } catch { }
-                    if (firstDesc.Length == 0 && desc != null) firstDesc = desc;
+                    if (desc != null && desc.Length > 0) names.Add(desc);
                     bool isZh = false;
                     string l = (lang == null) ? "" : lang.Trim().ToLowerInvariant();
                     for (int k = 0; k < ZhLangs.Length; k++) if (l == ZhLangs[k]) isZh = true;
@@ -239,17 +433,23 @@ $s.Dispose()";
                         desc.IndexOf("Yaoyao", StringComparison.OrdinalIgnoreCase) >= 0 ||
                         desc.IndexOf("中文", StringComparison.Ordinal) >= 0))
                         isZh = true;
-                    if (isZh) { zhToken = tok; VoiceName = desc; break; }
+                    if (isZh && zhToken == null) { zhToken = tok; zhDesc = desc; }
+                    if (WantVoice != null && WantVoice.Length > 0 && desc != null &&
+                        desc.IndexOf(WantVoice, StringComparison.OrdinalIgnoreCase) >= 0)
+                        wantToken = tok;
                 }
-                if (zhToken != null)
+                Voices = names.ToArray();
+                object pick = (wantToken != null) ? wantToken : zhToken;
+                if (pick != null)
                 {
-                    spType.InvokeMember("Voice", BindingFlags.SetProperty, null, sp, new object[] { zhToken });
+                    spType.InvokeMember("Voice", BindingFlags.SetProperty, null, sp, new object[] { pick });
                     Fallback = false;
+                    VoiceName = (wantToken != null) ? WantVoice : zhDesc;
                 }
                 else
                 {
                     Fallback = true;
-                    VoiceName = firstDesc;
+                    if (names.Count > 0) VoiceName = names[0];
                 }
                 spType.InvokeMember("Rate", BindingFlags.SetProperty, null, sp, new object[] { 0 });
                 Engine = "com";
@@ -263,7 +463,7 @@ $s.Dispose()";
             }
         }
 
-        /* ---------- 引擎 2：PowerShell 语音助手（本机实测可用） ---------- */
+        /* ---------- 引擎 2：PowerShell 语音助手 ---------- */
         private bool TryPs()
         {
             try
@@ -282,13 +482,22 @@ $s.Dispose()";
                 try
                 {
                     System.Threading.Tasks.Task<string> t = ps.StandardOutput.ReadLineAsync();
-                    if (t.Wait(5000)) Banner = t.Result ?? "";
+                    if (t.Wait(6000)) Banner = t.Result ?? "";
                 }
                 catch { }
                 if (ps.HasExited) { LastError = "PS: 助手退出 " + ps.ExitCode; return false; }
 
-                Fallback = (Banner.IndexOf("zh", StringComparison.OrdinalIgnoreCase) < 0);
+                string[] parts = Banner.Split('|');
+                List<string> names = new List<string>();
+                for (int i = 1; i < parts.Length; i++) if (parts[i].Trim().Length > 0) names.Add(parts[i].Trim());
+                Voices = names.ToArray();
+
+                Fallback = !parts[0].Contains("zh");
                 VoiceName = Fallback ? "助理语音(en)" : "助理语音(zh)";
+                if (WantVoice != null && WantVoice.Length > 0)
+                {
+                    ps.StandardInput.WriteLine("VOICE " + B64(WantVoice));
+                }
                 ps.StandardInput.WriteLine("RATE 0");
                 ps.StandardInput.Flush();
                 Engine = "ps";
@@ -299,6 +508,38 @@ $s.Dispose()";
                 LastError = "PS: " + Innermost(ex).Message;
                 return false;
             }
+        }
+
+        public void SelectVoice(string name)
+        {
+            WantVoice = name ?? "";
+            try
+            {
+                if (Engine == "com" && sp != null)
+                {
+                    object toks = spType.InvokeMember("GetVoices", BindingFlags.InvokeMethod, null, sp, new object[] { "", "" });
+                    int n = Convert.ToInt32(toks.GetType().InvokeMember("Count", BindingFlags.GetProperty, null, toks, new object[0]));
+                    for (int i = 0; i < n; i++)
+                    {
+                        object tok = toks.GetType().InvokeMember("Item", BindingFlags.GetProperty, null, toks, new object[] { i });
+                        string desc = "";
+                        try { desc = Convert.ToString(tok.GetType().InvokeMember("GetDescription", BindingFlags.InvokeMethod, null, tok, new object[] { 1 })); } catch { }
+                        if (desc != null && desc.IndexOf(WantVoice, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            spType.InvokeMember("Voice", BindingFlags.SetProperty, null, sp, new object[] { tok });
+                            VoiceName = desc;
+                            Fallback = false;
+                            return;
+                        }
+                    }
+                }
+                else if (Engine == "ps" && ps != null && WantVoice.Length > 0)
+                {
+                    ps.StandardInput.WriteLine("VOICE " + B64(WantVoice));
+                    ps.StandardInput.Flush();
+                }
+            }
+            catch { }
         }
 
         private static Exception Innermost(Exception ex)
@@ -317,20 +558,28 @@ $s.Dispose()";
 
             while (!stop)
             {
-                string item = null;
-                lock (gate) { if (q.Count > 0) item = q.Dequeue(); }
-                if (item == null) { Thread.Sleep(12); continue; }
+                Req r = null;
+                lock (gate) { if (q.Count > 0) r = q.Dequeue(); }
+                if (r == null) { Thread.Sleep(12); continue; }
                 try
                 {
                     if (Engine == "com")
                     {
-                        spType.InvokeMember("Rate", BindingFlags.SetProperty, null, sp, new object[] { rate });
-                        spType.InvokeMember("Speak", BindingFlags.InvokeMethod, null, sp, new object[] { item, 3 });
+                        spType.InvokeMember("Rate", BindingFlags.SetProperty, null, sp, new object[] { r.Rate });
+                        try
+                        {
+                            spType.InvokeMember("Speak", BindingFlags.InvokeMethod, null, sp,
+                                new object[] { Ssml(r.Word, r.Pitch, !Fallback), 11 });   // 1|2|8 = 异步+打断+XML
+                        }
+                        catch
+                        {
+                            spType.InvokeMember("Speak", BindingFlags.InvokeMethod, null, sp, new object[] { r.Word, 3 });
+                        }
                     }
                     else if (ps != null && !ps.HasExited)
                     {
-                        ps.StandardInput.WriteLine("RATE " + rate);
-                        ps.StandardInput.WriteLine(item);
+                        ps.StandardInput.WriteLine("RATE " + r.Rate);
+                        ps.StandardInput.WriteLine("X " + B64(Ssml(r.Word, r.Pitch, !Fallback)));
                         ps.StandardInput.Flush();
                     }
                 }
@@ -338,30 +587,20 @@ $s.Dispose()";
             }
         }
 
-        private static string Code(string zhWord)
-        {
-            if (zhWord == "往下") return "D";
-            if (zhWord == "右下") return "DR";
-            return "DL";
-        }
-
-        public void Say(string zhWord, int rateLevel)
+        public void Say(string zhWord, int rateLevel, int pitch)
         {
             if (!ready || failed) return;
-            rate = rateLevel;
-            string txt;
-            if (Engine == "ps") txt = Code(zhWord);
-            else if (Fallback)
+            string txt = zhWord;
+            if (Fallback)
             {
                 if (zhWord == "往下") txt = "down";
                 else if (zhWord == "右下") txt = "right down";
-                else txt = "left down";
+                else if (zhWord == "左下") txt = "left down";
             }
-            else txt = zhWord;
             lock (gate)
             {
                 q.Clear();
-                q.Enqueue(txt);
+                q.Enqueue(new Req(rateLevel, pitch, txt));
             }
         }
 
@@ -380,7 +619,7 @@ $s.Dispose()";
                 else
                 {
                     ps.StandardInput.WriteLine("RATE " + rateLevel);
-                    ps.StandardInput.WriteLine(Code(text));
+                    ps.StandardInput.WriteLine("X " + B64(Ssml(text, 0, !Fallback)));
                     ps.StandardInput.Flush();
                 }
                 Thread.Sleep(waitMs);
@@ -389,6 +628,354 @@ $s.Dispose()";
             catch (Exception ex) { LastError = "SayNow: " + Innermost(ex).Message; return false; }
         }
     }
+
+    // ---------- 设置窗口 ----------
+    internal sealed class SettingsForm : Form
+    {
+        private readonly VoiceOut voice;
+        private readonly Cfg working;
+
+        private ComboBox cbVoice, cbPreset, cbShot;
+        private TrackBar tbPitch, tbRate, tbVol, tbDim;
+        private Label lbPitch, lbRate, lbVol, lbDim, lbCue, lbWall;
+        private CheckBox ckShot, ckCue;
+        private NumericUpDown numLead;
+        private Button btnCuePick, btnCueClear, btnWallPick, btnWallClear;
+
+        public Cfg Result { get { return working; } }
+
+        public SettingsForm(VoiceOut v, Cfg cur)
+        {
+            voice = v;
+            working = cur.Clone();
+
+            Text = "设置 · AK-47 压枪提醒器";
+            ClientSize = new Size(648, 642);
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            BackColor = C(18, 22, 28);
+            ForeColor = C(232, 238, 246);
+            Font = new Font("Microsoft YaHei UI", 9f);
+            ShowInTaskbar = false;
+
+            int x = 24, w = 592;
+            int y = 12;
+
+            Head("语音", x, ref y, w);
+            RowLabel("语音音色", x, y);
+            cbVoice = new ComboBox();
+            cbVoice.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbVoice.SetBounds(150, y - 3, 340, 26);
+            StyleInput(cbVoice);
+            string[] vs = voice.Voices;
+            cbVoice.Items.Add("自动（优先中文）");
+            for (int i = 0; i < vs.Length; i++) cbVoice.Items.Add(vs[i]);
+            int sel = 0;
+            if (working.Voice.Length > 0)
+            {
+                for (int i = 0; i < vs.Length; i++) if (vs[i] == working.Voice) sel = i + 1;
+            }
+            cbVoice.SelectedIndex = sel;
+            Controls.Add(cbVoice);
+
+            Button btnTry = new Button();
+            btnTry.Text = "试听";
+            btnTry.SetBounds(500, y - 4, 90, 28);
+            StyleBtn(btnTry);
+            btnTry.Click += delegate { TrySpeak(); };
+            Controls.Add(btnTry);
+            y += 36;
+
+            RowLabel("音色预设", x, y);
+            cbPreset = new ComboBox();
+            cbPreset.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbPreset.SetBounds(150, y - 3, 180, 26);
+            StyleInput(cbPreset);
+            for (int i = 0; i < Presets.Names.Length; i++) cbPreset.Items.Add(Presets.Names[i]);
+            cbPreset.SelectedIndex = working.Preset;
+            cbPreset.SelectedIndexChanged += delegate { TrySpeak(); };
+            Controls.Add(cbPreset);
+            Label hint = new Label();
+            hint.Text = "（萝莉 = 更高音调 + 更快的语速）";
+            hint.SetBounds(340, y, 260, 22);
+            hint.ForeColor = C(140, 152, 166);
+            Controls.Add(hint);
+            y += 36;
+
+            RowLabel("音调偏移", x, y);
+            tbPitch = Slider(150, y - 2, 380, -50, 60, working.Pitch);
+            tbPitch.ValueChanged += delegate { UpdateLabels(); TrySpeak(); };
+            Controls.Add(tbPitch);
+            lbPitch = ValueLabel(540, y);
+            y += 36;
+
+            RowLabel("基础语速", x, y);
+            tbRate = Slider(150, y - 2, 380, 0, 6, working.Rate);
+            tbRate.ValueChanged += delegate { UpdateLabels(); TrySpeak(); };
+            Controls.Add(tbRate);
+            lbRate = ValueLabel(540, y);
+            y += 42;
+
+            Head("音效", x, ref y, w);
+            ckShot = new CheckBox();
+            ckShot.Text = "射击音效（每发一声）";
+            ckShot.SetBounds(x, y, 240, 24);
+            ckShot.ForeColor = C(232, 238, 246);
+            ckShot.Checked = working.ShotOn;
+            ckShot.CheckedChanged += delegate { working.ShotOn = ckShot.Checked; };
+            Controls.Add(ckShot);
+
+            cbShot = new ComboBox();
+            cbShot.DropDownStyle = ComboBoxStyle.DropDownList;
+            cbShot.SetBounds(300, y - 2, 150, 26);
+            StyleInput(cbShot);
+            for (int i = 0; i < Presets.ShotNames.Length; i++) cbShot.Items.Add(Presets.ShotNames[i]);
+            cbShot.SelectedIndex = working.ShotStyle;
+            cbShot.SelectedIndexChanged += delegate { };
+            Controls.Add(cbShot);
+            y += 34;
+
+            RowLabel("音量", x, y);
+            tbVol = Slider(150, y - 2, 380, 0, 100, working.ShotVol);
+            tbVol.ValueChanged += delegate { UpdateLabels(); };
+            Controls.Add(tbVol);
+            lbVol = ValueLabel(540, y);
+            y += 40;
+
+            ckCue = new CheckBox();
+            ckCue.Text = "换段提示音";
+            ckCue.SetBounds(x, y, 200, 24);
+            ckCue.ForeColor = C(232, 238, 246);
+            ckCue.Checked = working.CueOn;
+            ckCue.CheckedChanged += delegate { working.CueOn = ckCue.Checked; };
+            Controls.Add(ckCue);
+            y += 30;
+
+            RowLabel("自定义提示音", x, y);
+            btnCuePick = new Button();
+            btnCuePick.SetBounds(150, y - 4, 110, 28);
+            btnCuePick.Text = "选择 WAV…";
+            StyleBtn(btnCuePick);
+            btnCuePick.Click += delegate
+            {
+                OpenFileDialog d = new OpenFileDialog();
+                d.Filter = "WAV 音频|*.wav";
+                if (d.ShowDialog(this) == DialogResult.OK) { working.CueWav = d.FileName; UpdateLabels(); }
+            };
+            Controls.Add(btnCuePick);
+
+            btnCueClear = new Button();
+            btnCueClear.SetBounds(268, y - 4, 80, 28);
+            btnCueClear.Text = "清除";
+            StyleBtn(btnCueClear);
+            btnCueClear.Click += delegate { working.CueWav = ""; UpdateLabels(); };
+            Controls.Add(btnCueClear);
+
+            lbCue = new Label();
+            lbCue.SetBounds(356, y, 250, 22);
+            lbCue.ForeColor = C(140, 152, 166);
+            Controls.Add(lbCue);
+            y += 40;
+
+            Head("节奏", x, ref y, w);
+            RowLabel("提前量 (ms)", x, y);
+            numLead = new NumericUpDown();
+            numLead.SetBounds(150, y - 3, 110, 26);
+            numLead.Minimum = 0;
+            numLead.Maximum = 3000;
+            numLead.Increment = 10;
+            numLead.Value = Math.Min(3000, Math.Max(0, working.Lead));
+            numLead.BackColor = C(30, 36, 44);
+            numLead.ForeColor = C(232, 238, 246);
+            numLead.BorderStyle = BorderStyle.FixedSingle;
+            numLead.ValueChanged += delegate { working.Lead = (int)numLead.Value; };
+            Controls.Add(numLead);
+            Label h2 = new Label();
+            h2.Text = "0 ~ 3000，不设上限档位，想提前多久就提前多久";
+            h2.SetBounds(270, y, 340, 22);
+            h2.ForeColor = C(140, 152, 166);
+            Controls.Add(h2);
+            y += 42;
+
+            Head("外观", x, ref y, w);
+            RowLabel("壁纸", x, y);
+            btnWallPick = new Button();
+            btnWallPick.SetBounds(150, y - 4, 120, 28);
+            btnWallPick.Text = "选择图片…";
+            StyleBtn(btnWallPick);
+            btnWallPick.Click += delegate
+            {
+                OpenFileDialog d = new OpenFileDialog();
+                d.Filter = "图片|*.png;*.jpg;*.jpeg;*.bmp;*.gif";
+                if (d.ShowDialog(this) == DialogResult.OK) { working.Wallpaper = d.FileName; UpdateLabels(); }
+            };
+            Controls.Add(btnWallPick);
+
+            btnWallClear = new Button();
+            btnWallClear.SetBounds(278, y - 4, 80, 28);
+            btnWallClear.Text = "清除";
+            StyleBtn(btnWallClear);
+            btnWallClear.Click += delegate { working.Wallpaper = ""; UpdateLabels(); };
+            Controls.Add(btnWallClear);
+
+            lbWall = new Label();
+            lbWall.SetBounds(366, y, 240, 22);
+            lbWall.ForeColor = C(140, 152, 166);
+            Controls.Add(lbWall);
+            y += 38;
+
+            RowLabel("暗化", x, y);
+            tbDim = Slider(150, y - 2, 380, 0, 92, working.Dim);
+            tbDim.ValueChanged += delegate { UpdateLabels(); };
+            Controls.Add(tbDim);
+            lbDim = ValueLabel(540, y);
+            y += 44;
+
+            Button btnDef = new Button();
+            btnDef.Text = "恢复默认";
+            btnDef.SetBounds(x, y, 110, 32);
+            StyleBtn(btnDef);
+            btnDef.Click += delegate
+            {
+                working.Reset();
+                cbPreset.SelectedIndex = working.Preset;
+                cbShot.SelectedIndex = working.ShotStyle;
+                cbVoice.SelectedIndex = 0;
+                tbPitch.Value = working.Pitch;
+                tbRate.Value = working.Rate;
+                tbVol.Value = working.ShotVol;
+                tbDim.Value = working.Dim;
+                numLead.Value = working.Lead;
+                ckShot.Checked = working.ShotOn;
+                ckCue.Checked = working.CueOn;
+                UpdateLabels();
+            };
+            Controls.Add(btnDef);
+
+            Button btnCancel = new Button();
+            btnCancel.Text = "取消";
+            btnCancel.SetBounds(430, y, 90, 32);
+            StyleBtn(btnCancel);
+            btnCancel.DialogResult = DialogResult.Cancel;
+            Controls.Add(btnCancel);
+
+            Button btnOk = new Button();
+            btnOk.Text = "保存";
+            btnOk.SetBounds(530, y, 90, 32);
+            StyleBtn(btnOk);
+            btnOk.BackColor = C(245, 166, 35);
+            btnOk.ForeColor = Color.FromArgb(32, 20, 0);
+            btnOk.FlatAppearance.BorderColor = Color.FromArgb(245, 166, 35);
+            btnOk.Click += delegate
+            {
+                working.Preset = cbPreset.SelectedIndex;
+                working.ShotStyle = cbShot.SelectedIndex;
+                working.Voice = (cbVoice.SelectedIndex <= 0) ? "" : (string)cbVoice.Items[cbVoice.SelectedIndex];
+                working.ShotOn = ckShot.Checked;
+                working.CueOn = ckCue.Checked;
+                working.ShotVol = tbVol.Value;
+                working.Lead = (int)numLead.Value;
+                working.Dim = tbDim.Value;
+                working.Pitch = tbPitch.Value;
+                working.Rate = tbRate.Value;
+                working.Sanitize();
+                DialogResult = DialogResult.OK;
+            };
+            Controls.Add(btnOk);
+
+            AcceptButton = btnOk;
+            CancelButton = btnCancel;
+
+            UpdateLabels();
+        }
+
+        private void TrySpeak()
+        {
+            if (voice == null) return;
+            int pr = Math.Min(4, Math.Max(0, cbPreset.SelectedIndex));
+            int pitch = ClampInt(tbPitch.Value + Presets.PitchOff[pr], -60, 80);
+            int rate = ClampInt(tbRate.Value + Presets.RateOff[pr], 0, 10);
+            string w = voice.Fallback ? "left down" : "左下";
+            voice.Say(w, rate, pitch);
+        }
+
+        private static int ClampInt(int v, int a, int b) { return v < a ? a : (v > b ? b : v); }
+
+        private void UpdateLabels()
+        {
+            lbPitch.Text = (tbPitch.Value > 0 ? "+" : "") + tbPitch.Value + "%";
+            lbRate.Text = tbRate.Value.ToString();
+            lbVol.Text = tbVol.Value + "%";
+            lbDim.Text = tbDim.Value + "%";
+            lbCue.Text = working.CueWav.Length > 0 ? Path.GetFileName(working.CueWav) : "默认双音";
+            lbWall.Text = working.Wallpaper.Length > 0 ? Path.GetFileName(working.Wallpaper) : "无（纯色）";
+        }
+
+        private static Color C(int r, int g, int b) { return Color.FromArgb(r, g, b); }
+
+        private void Head(string text, int x, ref int y, int w)
+        {
+            Label l = new Label();
+            l.Text = text;
+            l.SetBounds(x, y, w, 20);
+            l.Font = new Font("Microsoft YaHei UI", 9.5f, FontStyle.Bold);
+            l.ForeColor = Color.FromArgb(245, 166, 35);
+            Controls.Add(l);
+            y += 26;
+        }
+
+        private Label RowLabel(string text, int x, int y)
+        {
+            Label l = new Label();
+            l.Text = text;
+            l.SetBounds(x, y, 126, 22);
+            l.ForeColor = Color.FromArgb(200, 210, 222);
+            Controls.Add(l);
+            return l;
+        }
+
+        private Label ValueLabel(int x, int y)
+        {
+            Label l = new Label();
+            l.SetBounds(x, y, 90, 22);
+            l.ForeColor = Color.FromArgb(232, 238, 246);
+            l.Font = new Font("Consolas", 9f, FontStyle.Bold);
+            Controls.Add(l);
+            return l;
+        }
+
+        private TrackBar Slider(int x, int y, int w, int min, int max, int val)
+        {
+            TrackBar t = new TrackBar();
+            t.SetBounds(x, y, w, 32);
+            t.Minimum = min;
+            t.Maximum = max;
+            t.TickStyle = TickStyle.None;
+            t.SmallChange = 1;
+            t.LargeChange = Math.Max(1, (max - min) / 10);
+            t.Value = ClampInt(val, min, max);
+            t.BackColor = Color.FromArgb(18, 22, 28);
+            return t;
+        }
+
+        private void StyleInput(Control c)
+        {
+            c.BackColor = Color.FromArgb(30, 36, 44);
+            c.ForeColor = Color.FromArgb(232, 238, 246);
+        }
+
+        private void StyleBtn(Button b)
+        {
+            b.FlatStyle = FlatStyle.Flat;
+            b.BackColor = Color.FromArgb(36, 43, 53);
+            b.ForeColor = Color.FromArgb(232, 238, 246);
+            b.FlatAppearance.BorderColor = Color.FromArgb(60, 70, 82);
+            b.Cursor = Cursors.Hand;
+        }
+    }
+
     // ---------- 主窗口 ----------
     internal sealed class MainForm : Form
     {
@@ -413,6 +1000,13 @@ $s.Dispose()";
 
         private VoiceOut voice;
         private SoundPlayer tickSound, segSound;
+        private SoundPlayer[] shotSounds;
+        private SoundPlayer cueCustom;
+
+        private Cfg cfg = new Cfg();
+        private string cfgPath = "";
+        private Image wallpaper;
+        private static int cardAlpha = 255;
 
         private ContextMenuStrip menu;
 
@@ -442,14 +1036,45 @@ $s.Dispose()";
             timer.Interval = 10;
             timer.Tick += OnTimerTick;
 
+            cfgPath = SettingsPath();
+            cfg.Load(cfgPath);
+            lead = cfg.Lead / 1000.0;
+            progressive = cfg.Progressive;
+            soundOn = cfg.Sound;
+
             BuildMenu();
-            InitSound();
             voice = new VoiceOut();
+            InitSound();
 
             // 全局鼠标监听
             hookProc = new LowLevelMouseProc(HookCallback);
             hookHandle = SetWindowsHookEx(WH_MOUSE_LL, hookProc, GetModuleHandle(null), 0);
             if (hookHandle == IntPtr.Zero) hookOn = false;
+            else hookOn = cfg.Hook;
+            TopMost = cfg.TopMost;
+
+            ApplyLook();
+        }
+
+        public static string SettingsPath()
+        {
+            string p = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "settings.ini");
+            try
+            {
+                if (File.Exists(p)) return p;
+                File.AppendAllText(p, "", Encoding.UTF8);
+                return p;
+            }
+            catch
+            {
+                try
+                {
+                    string d = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AK47SprayCoach");
+                    Directory.CreateDirectory(d);
+                    return Path.Combine(d, "settings.ini");
+                }
+                catch { return p; }
+            }
         }
 
         public bool HookInstalled { get { return hookHandle != IntPtr.Zero; } }
@@ -512,18 +1137,32 @@ $s.Dispose()";
             if (tickIdx != lastTick && tickIdx < Engine.N)
             {
                 lastTick = tickIdx;
-                if (soundOn && tickSound != null) { try { tickSound.Play(); } catch { } }
+                PlayShot();
             }
             if (seg != lastSeg)
             {
                 lastSeg = seg;
-                if (soundOn && segSound != null) { try { segSound.Play(); } catch { } }
+                if (soundOn && cfg.CueOn)
+                {
+                    try
+                    {
+                        if (cueCustom != null) cueCustom.Play();
+                        else if (segSound != null) segSound.Play();
+                    }
+                    catch { }
+                }
                 Speak(Engine.Word(seg));
             }
         }
 
         // ======================= 声音 / 语音 =======================
         private void InitSound()
+        {
+            BuildSounds();
+        }
+
+        // 重新生成/加载所有音效（设置变更后调用）
+        private void BuildSounds()
         {
             try
             {
@@ -533,6 +1172,81 @@ $s.Dispose()";
                 segSound.Load();
             }
             catch { tickSound = null; segSound = null; }
+
+            try
+            {
+                double vol = Math.Max(0.05, cfg.ShotVol / 100.0);
+                shotSounds = new SoundPlayer[3];
+                for (int i = 0; i < 3; i++)
+                {
+                    Stream s = MakeGunshot(i, vol);
+                    if (s != null) { shotSounds[i] = new SoundPlayer(s); shotSounds[i].Load(); }
+                }
+            }
+            catch { shotSounds = null; }
+
+            try
+            {
+                if (cfg.CueWav != null && cfg.CueWav.Length > 0 && File.Exists(cfg.CueWav))
+                {
+                    cueCustom = new SoundPlayer(cfg.CueWav);
+                    cueCustom.Load();
+                }
+                else cueCustom = null;
+            }
+            catch { cueCustom = null; }
+        }
+
+        // 程序化合成枪声：噪声爆 + 低频撞击 + 起音咔哒
+        private static Stream MakeGunshot(int style, double vol)
+        {
+            const int rate = 44100;
+            Random rnd = new Random(1337 + style * 77);
+            double dur = style == 1 ? 0.20 : (style == 2 ? 0.10 : 0.15);
+            int n = (int)(rate * dur);
+            double noiseTau = style == 2 ? 0.020 : (style == 1 ? 0.055 : 0.036);
+            double thumpF = style == 1 ? 70 : (style == 2 ? 140 : 100);
+            double thumpTau = style == 1 ? 0.075 : 0.045;
+            double bodyF = style == 1 ? 320 : (style == 2 ? 900 : 560);
+            double bodyTau = style == 2 ? 0.012 : 0.022;
+            double lp = 0;
+            List<short> data = new List<short>(n);
+            for (int i = 0; i < n; i++)
+            {
+                double t = (double)i / rate;
+                double noise = rnd.NextDouble() * 2 - 1;
+                lp += (noise - lp) * (style == 1 ? 0.20 : 0.55);     // 简易低通，改变噪声明亮度
+                double envNoise = Math.Exp(-t / noiseTau);
+                double envThump = Math.Exp(-t / thumpTau);
+                double envBody = Math.Exp(-t / bodyTau);
+                double click = t < 0.0022 ? (rnd.NextDouble() * 2 - 1) * (1 - t / 0.0022) * 0.9 : 0;
+                double v = lp * envNoise * 0.85
+                         + Math.Sin(2 * Math.PI * thumpF * t) * envThump * 0.75
+                         + Math.Sin(2 * Math.PI * bodyF * t) * envBody * 0.35
+                         + click;
+                v = Math.Tanh(v * 1.6) * vol;
+                if (v > 1) v = 1; if (v < -1) v = -1;
+                data.Add((short)(v * 32000));
+            }
+            return WavFrom(data, rate);
+        }
+
+        private static Stream WavFrom(List<short> data, int rate)
+        {
+            MemoryStream ms = new MemoryStream();
+            BinaryWriter bw = new BinaryWriter(ms);
+            int dataLen = data.Count * 2;
+            bw.Write(Encoding.ASCII.GetBytes("RIFF"));
+            bw.Write(36 + dataLen);
+            bw.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
+            bw.Write(16); bw.Write((short)1); bw.Write((short)1);
+            bw.Write(rate); bw.Write(rate * 2); bw.Write((short)2); bw.Write((short)16);
+            bw.Write(Encoding.ASCII.GetBytes("data"));
+            bw.Write(dataLen);
+            for (int i = 0; i < data.Count; i++) bw.Write(data[i]);
+            bw.Flush();
+            ms.Position = 0;
+            return ms;
         }
 
         private static Stream MakeWav(double[][] parts, double amp)
@@ -570,7 +1284,34 @@ $s.Dispose()";
         private void Speak(string word)
         {
             if (!soundOn || voice == null || !spraying) return;
-            voice.Say(word, Engine.Clamp(speedLevel, -10, 10));
+            voice.Say(word, VoiceRate(), VoicePitch());
+        }
+
+        private int VoiceRate()
+        {
+            int pr = Engine.Clamp(cfg.Preset, 0, Presets.RateOff.Length - 1);
+            return Engine.Clamp(speedLevel + cfg.Rate + Presets.RateOff[pr], -10, 10);
+        }
+
+        private int VoicePitch()
+        {
+            int pr = Engine.Clamp(cfg.Preset, 0, Presets.PitchOff.Length - 1);
+            return Engine.Clamp(cfg.Pitch + Presets.PitchOff[pr], -60, 80);
+        }
+
+        private void PlayShot()
+        {
+            if (!soundOn || !cfg.ShotOn) return;
+            try
+            {
+                if (shotSounds != null)
+                {
+                    int i = Engine.Clamp(cfg.ShotStyle, 0, shotSounds.Length - 1);
+                    if (shotSounds[i] != null) { shotSounds[i].Play(); return; }
+                }
+                if (tickSound != null) tickSound.Play();
+            }
+            catch { }
         }
 
         // ======================= 全局鼠标钩子 =======================
@@ -638,13 +1379,26 @@ $s.Dispose()";
         // ======================= 菜单 =======================
         private void BuildMenu()
         {
+            if (menu != null) { menu.Dispose(); menu = null; }
             menu = new ContextMenuStrip();
             menu.ShowImageMargin = false;
 
+            ToolStripMenuItem miSet = new ToolStripMenuItem("设置…    F2   （音效 / 音色 / 提前量 / 壁纸）");
+            miSet.Font = new Font(menu.Font, FontStyle.Bold);
+            miSet.Click += delegate { OpenSettings(); };
+            menu.Items.Add(miSet);
+            menu.Items.Add(new ToolStripSeparator());
+
             ToolStripMenuItem miProg = new ToolStripMenuItem("语速递进：每按住一次 +1");
             miProg.CheckOnClick = true;
-            miProg.Checked = progressive;
-            miProg.CheckedChanged += delegate { progressive = miProg.Checked; Invalidate(); };
+            miProg.Checked = cfg.Progressive;
+            miProg.CheckedChanged += delegate
+            {
+                progressive = miProg.Checked;
+                cfg.Progressive = miProg.Checked;
+                cfg.Save(cfgPath);
+                Invalidate();
+            };
             menu.Items.Add(miProg);
 
             ToolStripMenuItem miHook = new ToolStripMenuItem("全局监听（游戏内也生效）");
@@ -653,6 +1407,8 @@ $s.Dispose()";
             miHook.CheckedChanged += delegate
             {
                 hookOn = miHook.Checked;
+                cfg.Hook = miHook.Checked;
+                cfg.Save(cfgPath);
                 Invalidate();
             };
             menu.Items.Add(miHook);
@@ -663,6 +1419,8 @@ $s.Dispose()";
             miSound.CheckedChanged += delegate
             {
                 soundOn = miSound.Checked;
+                cfg.Sound = miSound.Checked;
+                cfg.Save(cfgPath);
                 if (!soundOn && voice != null) voice.Stop();
                 Invalidate();
             };
@@ -670,8 +1428,13 @@ $s.Dispose()";
 
             ToolStripMenuItem miTop = new ToolStripMenuItem("窗口置顶");
             miTop.CheckOnClick = true;
-            miTop.Checked = true;
-            miTop.CheckedChanged += delegate { TopMost = miTop.Checked; };
+            miTop.Checked = TopMost;
+            miTop.CheckedChanged += delegate
+            {
+                TopMost = miTop.Checked;
+                cfg.TopMost = miTop.Checked;
+                cfg.Save(cfgPath);
+            };
             menu.Items.Add(miTop);
 
             ToolStripMenuItem miLead = new ToolStripMenuItem("提前量（提示比子弹早）");
@@ -680,16 +1443,22 @@ $s.Dispose()";
             {
                 int ms = leads[i];
                 ToolStripMenuItem it = new ToolStripMenuItem(ms + " ms");
-                it.Checked = (Math.Abs(lead * 1000 - ms) < 1);
+                it.Checked = (Math.Abs(cfg.Lead - ms) < 1);
                 it.Click += delegate
                 {
+                    cfg.Lead = ms;
                     lead = ms / 1000.0;
+                    cfg.Save(cfgPath);
                     foreach (ToolStripItem x in miLead.DropDownItems) ((ToolStripMenuItem)x).Checked = false;
                     it.Checked = true;
                     Invalidate();
                 };
                 miLead.DropDownItems.Add(it);
             }
+            ToolStripMenuItem itMore = new ToolStripMenuItem("自定义（不设上限）…");
+            itMore.Click += delegate { OpenSettings(); };
+            miLead.DropDownItems.Add(new ToolStripSeparator());
+            miLead.DropDownItems.Add(itMore);
             menu.Items.Add(miLead);
 
             menu.Items.Add(new ToolStripSeparator());
@@ -709,8 +1478,8 @@ $s.Dispose()";
                     "1) 按住鼠标左键 = 开始扫射；松开 = 停止。\n" +
                     "2) 开着「全局监听」时，在游戏里按住开火键，本窗口会同步提示（只监听，不注入、不读内存）。\n" +
                     "3) 每按住一次，语音语速 +1（最多 +6），越快越考验反应。\n" +
-                    "4) 提前量默认 80ms：手从听到指令到拉到位要 100~200ms，所以提示必须抢先。\n" +
-                    "5) 右键 = 设置；拖动标题栏 = 移动窗口；Esc = 停止。",
+                    "4) F2 / 右键「设置」：换语音音色、射击音效、自定义提前量（0~3000ms）、换壁纸。\n" +
+                    "5) 拖动标题栏 = 移动窗口；Esc = 停止。",
                     "AK-47 压枪分段提醒器", MessageBoxButtons.OK, MessageBoxIcon.Information);
             };
             menu.Items.Add(miHelp);
@@ -719,6 +1488,90 @@ $s.Dispose()";
             ToolStripMenuItem miExit = new ToolStripMenuItem("退出");
             miExit.Click += delegate { Close(); };
             menu.Items.Add(miExit);
+        }
+
+        // ======================= 设置应用 =======================
+        private void OpenSettings()
+        {
+            using (SettingsForm f = new SettingsForm(voice, cfg))
+            {
+                if (f.ShowDialog(this) != DialogResult.OK) return;
+                cfg.CopyFrom(f.Result);
+            }
+            cfg.Save(cfgPath);
+            lead = cfg.Lead / 1000.0;
+            progressive = cfg.Progressive;
+            soundOn = cfg.Sound;
+            hookOn = cfg.Hook;
+            TopMost = cfg.TopMost;
+            ApplyLook();
+            BuildMenu();
+            Invalidate();
+        }
+
+        private void ApplyLook()
+        {
+            if (voice != null)
+            {
+                voice.WantVoice = cfg.Voice;
+                if (voice.Ready) voice.SelectVoice(cfg.Voice);
+            }
+            BuildSounds();
+            LoadWallpaper();
+        }
+
+        private void LoadWallpaper()
+        {
+            if (wallpaper != null) { try { wallpaper.Dispose(); } catch { } wallpaper = null; }
+            try
+            {
+                if (cfg.Wallpaper != null && cfg.Wallpaper.Length > 0 && File.Exists(cfg.Wallpaper))
+                {
+                    using (Image img = Image.FromFile(cfg.Wallpaper))
+                    {
+                        wallpaper = new Bitmap(img);
+                    }
+                }
+            }
+            catch { wallpaper = null; }
+            cardAlpha = (wallpaper != null) ? 236 : 255;
+        }
+
+        public void SetWallpaperForTest(string path)
+        {
+            cfg.Wallpaper = path;
+            LoadWallpaper();
+            Invalidate();
+        }
+
+        // 供 --sounds 自检：把合成出来的音效写到文件
+        public string DumpSounds(string dir)
+        {
+            try
+            {
+                Directory.CreateDirectory(dir);
+                Cfg save = cfg.Clone();
+                StringBuilder sb = new StringBuilder();
+                for (int s = 0; s < 3; s++)
+                {
+                    cfg.ShotVol = 80; cfg.ShotStyle = s;
+                    Stream st = MakeGunshot(s, 0.8);
+                    string f = Path.Combine(dir, "shot" + s + ".wav");
+                    using (FileStream fs = File.Create(f)) { st.CopyTo(fs); }
+                    sb.AppendLine("shot" + s + ".wav " + new FileInfo(f).Length + " bytes");
+                }
+                Stream tk = MakeWav(new double[][] { new double[] { 1180, 34 } }, 0.10);
+                string tf = Path.Combine(dir, "tick.wav");
+                using (FileStream fs = File.Create(tf)) { tk.CopyTo(fs); }
+                sb.AppendLine("tick.wav " + new FileInfo(tf).Length + " bytes");
+                Stream sg = MakeWav(new double[][] { new double[] { 720, 70 }, new double[] { 1080, 95 } }, 0.16);
+                string sf = Path.Combine(dir, "cue.wav");
+                using (FileStream fs = File.Create(sf)) { sg.CopyTo(fs); }
+                sb.AppendLine("cue.wav " + new FileInfo(sf).Length + " bytes");
+                cfg.CopyFrom(save);
+                return sb.ToString();
+            }
+            catch (Exception ex) { return "ERR " + ex.Message; }
         }
 
         // ======================= 交互 =======================
@@ -761,6 +1614,7 @@ $s.Dispose()";
             base.OnKeyDown(e);
             if (e.KeyCode == Keys.Escape) StopSpray(false);
             else if (e.KeyCode == Keys.Space && !spraying) StartSpray();   // 备用：按住空格也能练
+            else if (e.KeyCode == Keys.F2) OpenSettings();
             else if (e.KeyCode == Keys.F1) { menu.Show(this, new Point(20, headerRect.Bottom)); }
         }
 
@@ -818,6 +1672,7 @@ $s.Dispose()";
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.AntiAlias;
             g.Clear(Th.Bg);
+            PaintWallpaper(g);
             DoLayout();
 
             PaintHeader(g);
@@ -845,9 +1700,39 @@ $s.Dispose()";
         {
             using (GraphicsPath p = Round(r, 12))
             {
-                using (SolidBrush b = new SolidBrush(Th.Card)) g.FillPath(b, p);
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(cardAlpha, Th.Card))) g.FillPath(b, p);
                 using (Pen pen = new Pen(Th.Line)) g.DrawPath(pen, p);
             }
+        }
+
+        // 自定义壁纸：等比铺满 + 暗化
+        private void PaintWallpaper(Graphics g)
+        {
+            if (wallpaper == null) return;
+            try
+            {
+                int W = ClientSize.Width, H = ClientSize.Height;
+                double s = Math.Max((double)W / wallpaper.Width, (double)H / wallpaper.Height);
+                int w = (int)Math.Ceiling(wallpaper.Width * s);
+                int h = (int)Math.Ceiling(wallpaper.Height * s);
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.DrawImage(wallpaper, (W - w) / 2, (H - h) / 2, w, h);
+                int a = (int)Math.Round(cfg.Dim / 100.0 * 255.0);
+                if (a > 0)
+                {
+                    using (SolidBrush b = new SolidBrush(Color.FromArgb(a, 0, 0, 0)))
+                        g.FillRectangle(b, 0, 0, W, H);
+                }
+                // 顶部/底部压暗一点，保证标题与状态栏文字可读
+                using (LinearGradientBrush tb = new LinearGradientBrush(new Rectangle(0, 0, 1, 96),
+                    Color.FromArgb(150, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), LinearGradientMode.Vertical))
+                    g.FillRectangle(tb, 0, 0, W, 96);
+                using (LinearGradientBrush bb = new LinearGradientBrush(new Rectangle(0, 0, 1, 64),
+                    Color.FromArgb(0, 0, 0, 0), Color.FromArgb(170, 0, 0, 0), LinearGradientMode.Vertical))
+                    g.FillRectangle(bb, 0, H - 64, W, 64);
+            }
+            catch { }
         }
 
         private static void FillRound(Graphics g, Rectangle r, int rad, Color c)
@@ -1323,6 +2208,58 @@ $s.Dispose()";
             string diag = Arg(args, "--diag");
 
             if (selftest != null) return SelfTest(selftest);
+
+            // ---- 音效自检：把合成出来的 wav 全部导出 ----
+            string snd = Arg(args, "--sounds");
+            if (snd != null)
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                MainForm sf = new MainForm();
+                sf.TopMost = false;
+                sf.DisableHook();
+                string rep = sf.DumpSounds(snd);
+                try { File.WriteAllText(Path.Combine(snd, "sounds.txt"), rep, Encoding.UTF8); } catch { }
+                sf.Close();
+                return 0;
+            }
+
+            // ---- 设置窗口自检：把设置界面渲染成 png ----
+            string shotSet = Arg(args, "--shot-settings");
+            if (shotSet != null)
+            {
+                try
+                {
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    VoiceOut vv = new VoiceOut();
+                    Thread.Sleep(1800);
+                    Cfg cc = new Cfg();
+                    cc.Load(MainForm.SettingsPath());
+                    using (SettingsForm form = new SettingsForm(vv, cc))
+                    {
+                        form.StartPosition = FormStartPosition.Manual;
+                        form.Location = new Point(0, 0);
+                        form.Show();
+                        Application.DoEvents();
+                        Thread.Sleep(300);
+                        Application.DoEvents();
+                        using (Bitmap bmp = new Bitmap(form.Width, form.Height))
+                        {
+                            form.DrawToBitmap(bmp, new Rectangle(0, 0, form.Width, form.Height));
+                            bmp.Save(shotSet, ImageFormat.Png);
+                        }
+                        form.Close();
+                    }
+                    vv.Stop();
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    try { File.WriteAllText(shotSet + ".err.txt", ex.ToString(), Encoding.UTF8); } catch { }
+                    return 3;
+                }
+            }
 
             // ---- 无鼠标自检：跑 1.5 秒的真实扫射流程 ----
             if (Arg(args, "--demo") != null)
