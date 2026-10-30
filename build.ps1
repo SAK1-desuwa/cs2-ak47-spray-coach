@@ -13,7 +13,27 @@ $src = Join-Path $here "src\Ak47SprayCoach.cs"
 $out = Join-Path $here "AK47压枪提醒器.exe"
 $ico = Join-Path $here "app.ico"
 
+# WPF 程序集（MP3 等格式解码要用 MediaPlayer）
+function RefDll([string]$name) {
+    $roots = @(
+        "$env:WINDIR\Microsoft.NET\assembly\GAC_MSIL\$name",
+        "$env:WINDIR\Microsoft.NET\assembly\GAC_64\$name",
+        "$env:WINDIR\Microsoft.NET\assembly\GAC_32\$name"
+    )
+    foreach ($r in $roots) {
+        if (Test-Path $r) {
+            $f = Get-ChildItem $r -Recurse -Filter "$name.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($f) { return $f.FullName }
+        }
+    }
+    return $null
+}
+
 $compilerArgs = @("/nologo", "/target:winexe", "/platform:x64", "/optimize+", "/codepage:65001")
+foreach ($n in @("PresentationCore", "WindowsBase")) {
+    $dll = RefDll $n
+    if ($dll) { $compilerArgs += "/r:$dll" } else { Write-Host "警告: 找不到 $n.dll" -ForegroundColor Yellow }
+}
 if (Test-Path $ico) { $compilerArgs += "/win32icon:$ico" }
 $compilerArgs += "/out:$out"
 $compilerArgs += $src
