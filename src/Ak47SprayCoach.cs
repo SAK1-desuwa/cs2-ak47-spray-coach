@@ -17,6 +17,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using System.Windows.Threading;
 
 namespace Ak47Spray
 {
@@ -131,6 +132,155 @@ namespace Ak47Spray
         public static readonly Font FStatus = new Font("Microsoft YaHei UI", 11.5f, FontStyle.Regular, GraphicsUnit.Pixel);
     }
 
+    // ---------- MP3 / 其他格式：WPF MediaPlayer（自带解码器，走独立 Dispatcher 线程） ----------
+    internal sealed class MediaKit : IDisposable
+    {
+        private Thread th;
+        private Dispatcher dp;
+        private System.Windows.Media.MediaPlayer mp;
+        private readonly ManualResetEventSlim ready = new ManualResetEventSlim(false);
+        private volatile bool ok;
+        public string LastError = "";
+
+        public bool Ok { get { return ok; } }
+
+        public MediaKit(string path)
+        {
+            th = new Thread(delegate ()
+            {
+                try
+                {
+                    dp = Dispatcher.CurrentDispatcher;
+                    mp = new System.Windows.Media.MediaPlayer();
+                    mp.Volume = 0.9;
+                    mp.MediaOpened += delegate { ok = true; ready.Set(); };
+                    mp.MediaFailed += delegate(object s, System.Windows.Media.ExceptionEventArgs e)
+                    {
+                        LastError = (e.ErrorException == null) ? "media failed" : e.ErrorException.Message;
+                        ready.Set();
+                    };
+                    mp.Open(new Uri(path, UriKind.Absolute));
+                    Dispatcher.Run();                 // 事件在这里派发，Play 也从这里执行
+                }
+                catch (Exception ex) { LastError = ex.Message; ready.Set(); }
+            });
+            th.SetApartmentState(ApartmentState.STA);
+            th.IsBackground = true;
+            th.Start();
+
+            ready.Wait(4000);                          // 调用线程等打开结果
+            if (!ok && LastError.Length == 0) LastError = "打开超时";
+        }
+
+        public void Play()
+        {
+            try
+            {
+                Dispatcher d = dp;
+                if (d == null) return;
+                d.BeginInvoke(DispatcherPriority.Normal, new Action(delegate ()
+                {
+                    try { mp.Position = TimeSpan.Zero; mp.Play(); } catch { }
+                }));
+            }
+            catch { }
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                Dispatcher d = dp;
+                if (d != null) d.BeginInvokeShutdown(DispatcherPriority.Background);
+            }
+            catch { }
+        }
+    }
+
+    // ---------- 音效播放：wav -> SoundPlayer；mp3/wma -> WPF；再兜底 MCI ----------
+    internal sealed class Sample : IDisposable
+    {
+        private SoundPlayer wav;
+        private MediaKit media;
+        private string alias;
+        public string LastError = "";
+
+        [DllImport("winmm.dll", CharSet = CharSet.Unicode)]
+        private static extern int mciSendString(string cmd, StringBuilder ret, int retLen, IntPtr hwnd);
+
+        private static int counter;
+
+        public bool Ok { get { return wav != null || media != null || alias != null; } }
+
+        public static Sample FromStream(Stream s)
+        {
+            Sample x = new Sample();
+            try { x.wav = new SoundPlayer(s); x.wav.Load(); }
+            catch (Exception ex) { x.LastError = "stream: " + ex.Message; }
+            return x;
+        }
+
+        public static Sample Load(string path)
+        {
+            Sample x = new Sample();
+            if (path == null || path.Length == 0 || !File.Exists(path)) { x.LastError = "文件不存在"; return x; }
+
+            string ext = Path.GetExtension(path).ToLowerInvariant();
+            if (ext == ".wav")
+            {
+                try { x.wav = new SoundPlayer(path); x.wav.Load(); return x; }
+                catch (Exception ex) { x.LastError = "wav: " + ex.Message; }
+            }
+
+            // 非 wav（mp3 / wma / m4a …）先用 WPF MediaPlayer 解码
+            try
+            {
+                MediaKit mk = new MediaKit(path);
+                if (mk.Ok) { x.media = mk; return x; }
+                x.LastError = "wpf: " + mk.LastError;
+                mk.Dispose();
+            }
+            catch (Exception ex) { x.LastError = "wpf: " + ex.Message; }
+
+            // 还不行就试 Windows MCI
+            try
+            {
+                string al = "ak47sfx" + (++counter);
+                int rc = mciSendString("open \"" + path + "\" type mpegvideo alias " + al, null, 0, IntPtr.Zero);
+                if (rc != 0) rc = mciSendString("open \"" + path + "\" alias " + al, null, 0, IntPtr.Zero);
+                if (rc != 0)
+                {
+                    x.LastError = "mci open rc=" + rc;
+                    return x;
+                }
+                mciSendString("set " + al + " time format milliseconds", null, 0, IntPtr.Zero);
+                x.alias = al;
+            }
+            catch (Exception ex) { x.LastError = "mci: " + ex.Message; }
+            return x;
+        }
+
+        public void Play()
+        {
+            try
+            {
+                if (wav != null) { wav.Play(); return; }
+                if (media != null) { media.Play(); return; }
+                if (alias != null) mciSendString("play " + alias + " from 0", null, 0, IntPtr.Zero);
+            }
+            catch { }
+        }
+
+        public void Dispose()
+        {
+            try { if (alias != null) mciSendString("close " + alias, null, 0, IntPtr.Zero); } catch { }
+            try { if (media != null) media.Dispose(); } catch { }
+            alias = null;
+            media = null;
+            wav = null;
+        }
+    }
+
     // ---------- 设置 ----------
     internal sealed class Cfg
     {
@@ -184,7 +334,16 @@ namespace Ak47Spray
             try
             {
                 if (!File.Exists(path)) return;
-                string[] lines = File.ReadAllLines(path, Encoding.UTF8);
+                byte[] raw = File.ReadAllBytes(path);
+                string text;
+                if (raw.Length >= 3 && raw[0] == 0xEF && raw[1] == 0xBB && raw[2] == 0xBF)
+                    text = Encoding.UTF8.GetString(raw, 3, raw.Length - 3);
+                else
+                {
+                    try { text = new UTF8Encoding(false, true).GetString(raw); }
+                    catch { text = Encoding.Default.GetString(raw); }   // 记事本存成 ANSI 也能读
+                }
+                string[] lines = text.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
                 for (int i = 0; i < lines.Length; i++)
                 {
                     string ln = lines[i].Trim();
@@ -238,7 +397,7 @@ namespace Ak47Spray
                 sb.AppendLine("hook=" + (Hook ? 1 : 0));
                 sb.AppendLine("progressive=" + (Progressive ? 1 : 0));
                 sb.AppendLine("sound=" + (Sound ? 1 : 0));
-                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(false));
+                File.WriteAllText(path, sb.ToString(), new UTF8Encoding(true));   // 带 BOM，避免记事本按 ANSI 打开
             }
             catch { }
         }
@@ -716,7 +875,7 @@ $s.Dispose()";
             btnShotPick.Click += delegate
             {
                 OpenFileDialog d = new OpenFileDialog();
-                d.Filter = "音频文件|*.wav;*.mp3;*.ogg|所有文件|*.*";
+                d.Filter = "音频文件|*.wav;*.mp3;*.wma;*.m4a|所有文件|*.*";
                 if (d.ShowDialog(this) == DialogResult.OK) { working.ShotWav = d.FileName; UpdateLabels(); PreviewShot(); }
             };
             Controls.Add(btnShotPick);
@@ -765,7 +924,7 @@ $s.Dispose()";
             btnCuePick.Click += delegate
             {
                 OpenFileDialog d = new OpenFileDialog();
-                d.Filter = "WAV 音频|*.wav";
+                d.Filter = "音频文件|*.wav;*.mp3;*.wma|所有文件|*.*";
                 if (d.ShowDialog(this) == DialogResult.OK) { working.CueWav = d.FileName; UpdateLabels(); }
             };
             Controls.Add(btnCuePick);
@@ -896,8 +1055,8 @@ $s.Dispose()";
         {
             try
             {
-                SoundPlayer sp = MainForm.BuildShot(working.ShotWav, tbVol.Value);
-                if (sp != null) sp.Play();
+                Sample s = MainForm.BuildShot(working.ShotWav, tbVol.Value);
+                if (s != null) s.Play();
             }
             catch { }
         }
@@ -1012,8 +1171,8 @@ $s.Dispose()";
 
         private VoiceOut voice;
         private SoundPlayer tickSound, segSound;
-        private SoundPlayer shotSound;
-        private SoundPlayer cueCustom;
+        private Sample shotSound;
+        private Sample cueCustom;
 
         private Cfg cfg = new Cfg();
         private string cfgPath = "";
@@ -1187,41 +1346,37 @@ $s.Dispose()";
 
             try
             {
+                if (shotSound != null) { shotSound.Dispose(); shotSound = null; }
                 shotSound = BuildShot(cfg.ShotWav, cfg.ShotVol);
             }
             catch { shotSound = null; }
 
             try
             {
+                if (cueCustom != null) { cueCustom.Dispose(); cueCustom = null; }
                 if (cfg.CueWav != null && cfg.CueWav.Length > 0 && File.Exists(cfg.CueWav))
                 {
-                    cueCustom = new SoundPlayer(cfg.CueWav);
-                    cueCustom.Load();
+                    Sample cs = Sample.Load(cfg.CueWav);
+                    if (cs.Ok) cueCustom = cs;
+                    else { cs.Dispose(); cueCustom = null; }
                 }
-                else cueCustom = null;
             }
             catch { cueCustom = null; }
         }
 
-        // 自定义 wav 优先，没有就用内置合成
-        public static SoundPlayer BuildShot(string wav, int vol)
+        // 自定义音频优先（wav/mp3/wma），没有或打不开就用内置合成
+        public static Sample BuildShot(string path, int vol)
         {
-            try
+            if (path != null && path.Length > 0 && File.Exists(path))
             {
-                if (wav != null && wav.Length > 0 && File.Exists(wav))
-                {
-                    SoundPlayer sp = new SoundPlayer(wav);
-                    sp.Load();
-                    return sp;
-                }
+                Sample s = Sample.Load(path);
+                if (s.Ok) return s;
+                s.Dispose();
             }
-            catch { }
             try
             {
                 double v = Math.Max(0.05, Math.Min(1.0, vol / 100.0));
-                SoundPlayer s2 = new SoundPlayer(MakeGunshot(0, v));
-                s2.Load();
-                return s2;
+                return Sample.FromStream(MakeGunshot(0, v));
             }
             catch { return null; }
         }
@@ -2190,7 +2345,8 @@ $s.Dispose()";
             return string.Format(
                 "midShot={0} midSeg={1} | lastShots={2} duration={3:0.00}s segAtStop={4} rounds={5} speedLevel={6} | voice ready={7} engine={8} banner={9}",
                 midShot, midSeg, lastShots, lastDuration, lastSeg, rounds, speedLevel,
-                voice.Ready, voice.Engine, voice.Banner);
+                voice.Ready, voice.Engine, voice.Banner)
+                + string.Format(" | shot={0} ok={1}", cfg.ShotWav, shotSound != null && shotSound.Ok);
         }
     }
 
@@ -2231,6 +2387,24 @@ $s.Dispose()";
             string diag = Arg(args, "--diag");
 
             if (selftest != null) return SelfTest(selftest);
+
+            // ---- 单文件音效自检：能不能加载/播放这个 wav 或 mp3 ----
+            string ts = Arg(args, "--testsound");
+            if (ts != null)
+            {
+                string rep = (diag != null && diag.Length > 0) ? diag : "testsound.log";
+                Sample s = Sample.Load(ts);
+                bool good = s.Ok;
+                StringBuilder sb = new StringBuilder();
+                sb.AppendLine("path=" + ts);
+                sb.AppendLine("exists=" + File.Exists(ts));
+                sb.AppendLine("ok=" + good);
+                sb.AppendLine("error=" + s.LastError);
+                if (good) { s.Play(); Thread.Sleep(700); s.Play(); Thread.Sleep(300); }
+                s.Dispose();
+                try { File.WriteAllText(rep, sb.ToString(), Encoding.UTF8); } catch { }
+                return good ? 0 : 1;
+            }
 
             // ---- 音效自检：把合成出来的 wav 全部导出 ----
             string snd = Arg(args, "--sounds");
