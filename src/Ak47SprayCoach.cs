@@ -135,11 +135,10 @@ namespace Ak47Spray
     internal sealed class Cfg
     {
         public string Voice = "";        // 语音名（空 = 自动）
-        public int Preset = 0;           // 音色预设 0标准 1萝莉 2少女 3大叔 4机器人
-        public int Pitch = 0;            // 额外音调 -50..60 (%)
+        public int Pitch = 0;            // 音调 -50..60 (%)
         public int Rate = 0;             // 基础语速 0..6
         public bool ShotOn = true;       // 射击音效
-        public int ShotStyle = 0;        // 0 标准 1 重低音 2 清脆
+        public string ShotWav = "";      // 自定义射击音效（空 = 用内置合成）
         public int ShotVol = 70;         // 射击音量 0..100
         public bool CueOn = true;        // 换段提示音
         public string CueWav = "";       // 自定义提示音 wav
@@ -153,8 +152,8 @@ namespace Ak47Spray
 
         public void Reset()
         {
-            Voice = ""; Preset = 0; Pitch = 0; Rate = 0;
-            ShotOn = true; ShotStyle = 0; ShotVol = 70;
+            Voice = ""; Pitch = 0; Rate = 0;
+            ShotOn = true; ShotWav = ""; ShotVol = 70;
             CueOn = true; CueWav = "";
             Lead = 80; Wallpaper = ""; Dim = 55;
             TopMost = true; Hook = true; Progressive = true; Sound = true;
@@ -163,8 +162,8 @@ namespace Ak47Spray
         public Cfg Clone()
         {
             Cfg c = new Cfg();
-            c.Voice = Voice; c.Preset = Preset; c.Pitch = Pitch; c.Rate = Rate;
-            c.ShotOn = ShotOn; c.ShotStyle = ShotStyle; c.ShotVol = ShotVol;
+            c.Voice = Voice; c.Pitch = Pitch; c.Rate = Rate;
+            c.ShotOn = ShotOn; c.ShotWav = ShotWav; c.ShotVol = ShotVol;
             c.CueOn = CueOn; c.CueWav = CueWav;
             c.Lead = Lead; c.Wallpaper = Wallpaper; c.Dim = Dim;
             c.TopMost = TopMost; c.Hook = Hook; c.Progressive = Progressive; c.Sound = Sound;
@@ -173,8 +172,8 @@ namespace Ak47Spray
 
         public void CopyFrom(Cfg o)
         {
-            Voice = o.Voice; Preset = o.Preset; Pitch = o.Pitch; Rate = o.Rate;
-            ShotOn = o.ShotOn; ShotStyle = o.ShotStyle; ShotVol = o.ShotVol;
+            Voice = o.Voice; Pitch = o.Pitch; Rate = o.Rate;
+            ShotOn = o.ShotOn; ShotWav = o.ShotWav; ShotVol = o.ShotVol;
             CueOn = o.CueOn; CueWav = o.CueWav;
             Lead = o.Lead; Wallpaper = o.Wallpaper; Dim = o.Dim;
             TopMost = o.TopMost; Hook = o.Hook; Progressive = o.Progressive; Sound = o.Sound;
@@ -197,11 +196,10 @@ namespace Ak47Spray
                     switch (k)
                     {
                         case "voice": Voice = v; break;
-                        case "preset": Preset = i4(v, 0); break;
                         case "pitch": Pitch = i4(v, 0); break;
                         case "rate": Rate = i4(v, 0); break;
                         case "shoton": ShotOn = b1(v); break;
-                        case "shotstyle": ShotStyle = i4(v, 0); break;
+                        case "shotwav": ShotWav = v; break;
                         case "shotvol": ShotVol = i4(v, 70); break;
                         case "cueon": CueOn = b1(v); break;
                         case "cuewav": CueWav = v; break;
@@ -226,11 +224,10 @@ namespace Ak47Spray
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("; AK-47 压枪提醒器 设置文件（可直接编辑）");
                 sb.AppendLine("voice=" + Voice);
-                sb.AppendLine("preset=" + Preset);
                 sb.AppendLine("pitch=" + Pitch);
                 sb.AppendLine("rate=" + Rate);
                 sb.AppendLine("shoton=" + (ShotOn ? 1 : 0));
-                sb.AppendLine("shotstyle=" + ShotStyle);
+                sb.AppendLine("shotwav=" + ShotWav);
                 sb.AppendLine("shotvol=" + ShotVol);
                 sb.AppendLine("cueon=" + (CueOn ? 1 : 0));
                 sb.AppendLine("cuewav=" + CueWav);
@@ -248,12 +245,10 @@ namespace Ak47Spray
 
         public void Sanitize()
         {
-            if (Preset < 0 || Preset > 4) Preset = 0;
             if (Pitch < -60) Pitch = -60;
             if (Pitch > 80) Pitch = 80;
             if (Rate < 0) Rate = 0;
             if (Rate > 6) Rate = 6;
-            if (ShotStyle < 0 || ShotStyle > 2) ShotStyle = 0;
             if (ShotVol < 0) ShotVol = 0;
             if (ShotVol > 100) ShotVol = 100;
             if (Lead < 0) Lead = 0;
@@ -274,13 +269,6 @@ namespace Ak47Spray
         }
     }
 
-    internal static class Presets
-    {
-        public static readonly string[] Names = new string[] { "标准", "萝莉音", "少女音", "大叔音", "机器人" };
-        public static readonly int[] PitchOff = new int[] { 0, 45, 25, -25, -15 };
-        public static readonly int[] RateOff = new int[] { 0, 1, 0, -1, 2 };
-        public static readonly string[] ShotNames = new string[] { "标准 AK", "重低音", "清脆" };
-    }
 
     // ---------- 语音：双引擎（进程内 SAPI COM → 失败则改用 PowerShell 语音助手）+ SSML 变声 ----------
     internal sealed class VoiceOut
@@ -635,9 +623,10 @@ $s.Dispose()";
         private readonly VoiceOut voice;
         private readonly Cfg working;
 
-        private ComboBox cbVoice, cbPreset, cbShot;
+        private ComboBox cbVoice;
         private TrackBar tbPitch, tbRate, tbVol, tbDim;
-        private Label lbPitch, lbRate, lbVol, lbDim, lbCue, lbWall;
+        private Label lbPitch, lbRate, lbVol, lbDim, lbCue, lbWall, lbShot;
+        private Button btnShotPick, btnShotClear, btnShotTest;
         private CheckBox ckShot, ckCue;
         private NumericUpDown numLead;
         private Button btnCuePick, btnCueClear, btnWallPick, btnWallClear;
@@ -688,21 +677,12 @@ $s.Dispose()";
             Controls.Add(btnTry);
             y += 36;
 
-            RowLabel("音色预设", x, y);
-            cbPreset = new ComboBox();
-            cbPreset.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbPreset.SetBounds(150, y - 3, 180, 26);
-            StyleInput(cbPreset);
-            for (int i = 0; i < Presets.Names.Length; i++) cbPreset.Items.Add(Presets.Names[i]);
-            cbPreset.SelectedIndex = working.Preset;
-            cbPreset.SelectedIndexChanged += delegate { TrySpeak(); };
-            Controls.Add(cbPreset);
             Label hint = new Label();
-            hint.Text = "（萝莉 = 更高音调 + 更快的语速）";
-            hint.SetBounds(340, y, 260, 22);
+            hint.Text = "音色不用预设：直接拖下面的「音调 / 语速」，或用上面换一个系统语音";
+            hint.SetBounds(x, y - 2, w, 22);
             hint.ForeColor = C(140, 152, 166);
             Controls.Add(hint);
-            y += 36;
+            y += 28;
 
             RowLabel("音调偏移", x, y);
             tbPitch = Slider(150, y - 2, 380, -50, 60, working.Pitch);
@@ -721,21 +701,45 @@ $s.Dispose()";
             Head("音效", x, ref y, w);
             ckShot = new CheckBox();
             ckShot.Text = "射击音效（每发一声）";
-            ckShot.SetBounds(x, y, 240, 24);
+            ckShot.SetBounds(x, y, 300, 24);
             ckShot.ForeColor = C(232, 238, 246);
             ckShot.Checked = working.ShotOn;
             ckShot.CheckedChanged += delegate { working.ShotOn = ckShot.Checked; };
             Controls.Add(ckShot);
+            y += 32;
 
-            cbShot = new ComboBox();
-            cbShot.DropDownStyle = ComboBoxStyle.DropDownList;
-            cbShot.SetBounds(300, y - 2, 150, 26);
-            StyleInput(cbShot);
-            for (int i = 0; i < Presets.ShotNames.Length; i++) cbShot.Items.Add(Presets.ShotNames[i]);
-            cbShot.SelectedIndex = working.ShotStyle;
-            cbShot.SelectedIndexChanged += delegate { };
-            Controls.Add(cbShot);
-            y += 34;
+            RowLabel("音效文件", x, y);
+            btnShotPick = new Button();
+            btnShotPick.SetBounds(150, y - 4, 120, 28);
+            btnShotPick.Text = "选择 WAV…";
+            StyleBtn(btnShotPick);
+            btnShotPick.Click += delegate
+            {
+                OpenFileDialog d = new OpenFileDialog();
+                d.Filter = "音频文件|*.wav;*.mp3;*.ogg|所有文件|*.*";
+                if (d.ShowDialog(this) == DialogResult.OK) { working.ShotWav = d.FileName; UpdateLabels(); PreviewShot(); }
+            };
+            Controls.Add(btnShotPick);
+
+            btnShotClear = new Button();
+            btnShotClear.SetBounds(278, y - 4, 80, 28);
+            btnShotClear.Text = "用内置";
+            StyleBtn(btnShotClear);
+            btnShotClear.Click += delegate { working.ShotWav = ""; UpdateLabels(); PreviewShot(); };
+            Controls.Add(btnShotClear);
+
+            btnShotTest = new Button();
+            btnShotTest.SetBounds(366, y - 4, 60, 28);
+            btnShotTest.Text = "试听";
+            StyleBtn(btnShotTest);
+            btnShotTest.Click += delegate { PreviewShot(); };
+            Controls.Add(btnShotTest);
+
+            lbShot = new Label();
+            lbShot.SetBounds(436, y, 172, 22);
+            lbShot.ForeColor = C(140, 152, 166);
+            Controls.Add(lbShot);
+            y += 40;
 
             RowLabel("音量", x, y);
             tbVol = Slider(150, y - 2, 380, 0, 100, working.ShotVol);
@@ -840,8 +844,7 @@ $s.Dispose()";
             btnDef.Click += delegate
             {
                 working.Reset();
-                cbPreset.SelectedIndex = working.Preset;
-                cbShot.SelectedIndex = working.ShotStyle;
+                UpdateLabels();
                 cbVoice.SelectedIndex = 0;
                 tbPitch.Value = working.Pitch;
                 tbRate.Value = working.Rate;
@@ -870,8 +873,6 @@ $s.Dispose()";
             btnOk.FlatAppearance.BorderColor = Color.FromArgb(245, 166, 35);
             btnOk.Click += delegate
             {
-                working.Preset = cbPreset.SelectedIndex;
-                working.ShotStyle = cbShot.SelectedIndex;
                 working.Voice = (cbVoice.SelectedIndex <= 0) ? "" : (string)cbVoice.Items[cbVoice.SelectedIndex];
                 working.ShotOn = ckShot.Checked;
                 working.CueOn = ckCue.Checked;
@@ -891,12 +892,21 @@ $s.Dispose()";
             UpdateLabels();
         }
 
+        private void PreviewShot()
+        {
+            try
+            {
+                SoundPlayer sp = MainForm.BuildShot(working.ShotWav, tbVol.Value);
+                if (sp != null) sp.Play();
+            }
+            catch { }
+        }
+
         private void TrySpeak()
         {
             if (voice == null) return;
-            int pr = Math.Min(4, Math.Max(0, cbPreset.SelectedIndex));
-            int pitch = ClampInt(tbPitch.Value + Presets.PitchOff[pr], -60, 80);
-            int rate = ClampInt(tbRate.Value + Presets.RateOff[pr], 0, 10);
+            int pitch = ClampInt(tbPitch.Value, -60, 80);
+            int rate = ClampInt(tbRate.Value, 0, 10);
             string w = voice.Fallback ? "left down" : "左下";
             voice.Say(w, rate, pitch);
         }
@@ -910,6 +920,8 @@ $s.Dispose()";
             lbVol.Text = tbVol.Value + "%";
             lbDim.Text = tbDim.Value + "%";
             lbCue.Text = working.CueWav.Length > 0 ? Path.GetFileName(working.CueWav) : "默认双音";
+            lbShot.Text = (working.ShotWav != null && working.ShotWav.Length > 0)
+                ? Path.GetFileName(working.ShotWav) : "内置合成 AK";
             lbWall.Text = working.Wallpaper.Length > 0 ? Path.GetFileName(working.Wallpaper) : "无（纯色）";
         }
 
@@ -1000,7 +1012,7 @@ $s.Dispose()";
 
         private VoiceOut voice;
         private SoundPlayer tickSound, segSound;
-        private SoundPlayer[] shotSounds;
+        private SoundPlayer shotSound;
         private SoundPlayer cueCustom;
 
         private Cfg cfg = new Cfg();
@@ -1175,15 +1187,9 @@ $s.Dispose()";
 
             try
             {
-                double vol = Math.Max(0.05, cfg.ShotVol / 100.0);
-                shotSounds = new SoundPlayer[3];
-                for (int i = 0; i < 3; i++)
-                {
-                    Stream s = MakeGunshot(i, vol);
-                    if (s != null) { shotSounds[i] = new SoundPlayer(s); shotSounds[i].Load(); }
-                }
+                shotSound = BuildShot(cfg.ShotWav, cfg.ShotVol);
             }
-            catch { shotSounds = null; }
+            catch { shotSound = null; }
 
             try
             {
@@ -1197,8 +1203,31 @@ $s.Dispose()";
             catch { cueCustom = null; }
         }
 
+        // 自定义 wav 优先，没有就用内置合成
+        public static SoundPlayer BuildShot(string wav, int vol)
+        {
+            try
+            {
+                if (wav != null && wav.Length > 0 && File.Exists(wav))
+                {
+                    SoundPlayer sp = new SoundPlayer(wav);
+                    sp.Load();
+                    return sp;
+                }
+            }
+            catch { }
+            try
+            {
+                double v = Math.Max(0.05, Math.Min(1.0, vol / 100.0));
+                SoundPlayer s2 = new SoundPlayer(MakeGunshot(0, v));
+                s2.Load();
+                return s2;
+            }
+            catch { return null; }
+        }
+
         // 程序化合成枪声：噪声爆 + 低频撞击 + 起音咔哒
-        private static Stream MakeGunshot(int style, double vol)
+        public static Stream MakeGunshot(int style, double vol)
         {
             const int rate = 44100;
             Random rnd = new Random(1337 + style * 77);
@@ -1249,7 +1278,7 @@ $s.Dispose()";
             return ms;
         }
 
-        private static Stream MakeWav(double[][] parts, double amp)
+        public static Stream MakeWav(double[][] parts, double amp)
         {
             const int rate = 44100;
             MemoryStream ms = new MemoryStream();
@@ -1289,14 +1318,12 @@ $s.Dispose()";
 
         private int VoiceRate()
         {
-            int pr = Engine.Clamp(cfg.Preset, 0, Presets.RateOff.Length - 1);
-            return Engine.Clamp(speedLevel + cfg.Rate + Presets.RateOff[pr], -10, 10);
+            return Engine.Clamp(speedLevel + cfg.Rate, -10, 10);
         }
 
         private int VoicePitch()
         {
-            int pr = Engine.Clamp(cfg.Preset, 0, Presets.PitchOff.Length - 1);
-            return Engine.Clamp(cfg.Pitch + Presets.PitchOff[pr], -60, 80);
+            return Engine.Clamp(cfg.Pitch, -60, 80);
         }
 
         private void PlayShot()
@@ -1304,11 +1331,7 @@ $s.Dispose()";
             if (!soundOn || !cfg.ShotOn) return;
             try
             {
-                if (shotSounds != null)
-                {
-                    int i = Engine.Clamp(cfg.ShotStyle, 0, shotSounds.Length - 1);
-                    if (shotSounds[i] != null) { shotSounds[i].Play(); return; }
-                }
+                if (shotSound != null) { shotSound.Play(); return; }
                 if (tickSound != null) tickSound.Play();
             }
             catch { }
@@ -1554,8 +1577,8 @@ $s.Dispose()";
                 StringBuilder sb = new StringBuilder();
                 for (int s = 0; s < 3; s++)
                 {
-                    cfg.ShotVol = 80; cfg.ShotStyle = s;
-                    Stream st = MakeGunshot(s, 0.8);
+                    cfg.ShotVol = 80;
+                    Stream st = MakeGunshot(0, 0.8);
                     string f = Path.Combine(dir, "shot" + s + ".wav");
                     using (FileStream fs = File.Create(f)) { st.CopyTo(fs); }
                     sb.AppendLine("shot" + s + ".wav " + new FileInfo(f).Length + " bytes");
