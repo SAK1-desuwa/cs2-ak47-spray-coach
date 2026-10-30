@@ -1,0 +1,732 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AK-47 压枪分段提醒器 · CS2</title>
+<style>
+  :root{
+    --bg:#0b0e12; --card:rgba(255,255,255,.035); --line:rgba(255,255,255,.09);
+    --txt:#e9eef5; --dim:#8b97a6; --orange:#f5a623; --left:#4fa3ff; --right:#ff6b5a;
+    --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:
+      radial-gradient(1200px 600px at 15% -10%, rgba(245,166,35,.10), transparent 60%),
+      radial-gradient(900px 500px at 100% 0%, rgba(79,163,255,.08), transparent 55%),
+      var(--bg);
+    color:var(--txt);
+    font:15px/1.55 -apple-system,"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1220px;margin:0 auto;padding:20px 20px 60px}
+  header.top{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+  header.top h1{font-size:19px;margin:0;letter-spacing:.5px}
+  header.top h1 b{color:var(--orange)}
+  .badges{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+  .badge{font:12px/1 var(--mono);padding:6px 9px;border:1px solid var(--line);border-radius:999px;color:var(--dim)}
+  .badge b{color:var(--txt);font-weight:600}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px}
+  .grid{display:grid;grid-template-columns:1.12fr .88fr;gap:16px;align-items:stretch}
+  @media(max-width:920px){.grid{grid-template-columns:1fr}}
+
+  /* ---------- 提示区 ---------- */
+  .cue-card{padding:18px 18px 14px;display:flex;flex-direction:column;gap:14px}
+  .cue{display:flex;align-items:center;gap:18px;min-height:132px}
+  .arrow{
+    font-size:104px;line-height:.85;width:132px;text-align:center;flex:0 0 auto;
+    color:var(--orange);text-shadow:0 0 34px currentColor;transition:color .12s;
+  }
+  .cue-main{min-width:0}
+  .cue-title{font-size:27px;font-weight:750;letter-spacing:.5px;white-space:nowrap}
+  .cue-title span{font-weight:800}
+  .cue-sub{color:var(--dim);font-size:13.5px;margin-top:6px}
+  .cue-sub b{color:var(--txt)}
+
+  .timeline{position:relative;height:34px;border-radius:10px;overflow:hidden;display:flex;border:1px solid var(--line);cursor:pointer}
+  .seg{position:relative;display:flex;align-items:center;justify-content:center;font:11.5px/1 var(--mono);color:#fff;opacity:.5;transition:opacity .15s;border-right:1px solid rgba(0,0,0,.45);overflow:hidden;white-space:nowrap;letter-spacing:.3px}
+  .seg:last-child{border-right:0}
+  .seg.on{opacity:1}
+  .seg.s-left{background:linear-gradient(180deg,rgba(79,163,255,.34),rgba(79,163,255,.16))}
+  .seg.s-right{background:linear-gradient(180deg,rgba(255,107,90,.34),rgba(255,107,90,.16))}
+  .seg.s-down{background:linear-gradient(180deg,rgba(245,166,35,.40),rgba(245,166,35,.18))}
+  .playhead{position:absolute;top:0;bottom:0;width:2px;background:#fff;box-shadow:0 0 12px #fff;pointer-events:none;left:0;z-index:3}
+  .ticks{display:flex;gap:3px;flex-wrap:wrap;margin-top:12px}
+  .tick{
+    flex:1 1 26px;min-width:24px;height:42px;border-radius:7px;border:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font:10px/1.1 var(--mono);color:var(--dim);background:rgba(255,255,255,.02);position:relative;overflow:hidden
+  }
+  .tick i{font-style:normal;font-size:13px;line-height:1;margin-bottom:2px}
+  .tick.d-left i{color:var(--left)} .tick.d-right i{color:var(--right)} .tick.d-down i{color:var(--orange)}
+  .tick.on{border-color:#fff;background:rgba(255,255,255,.12);color:#fff;transform:translateY(-2px)}
+  .tick.done{opacity:.45}
+  .cue-note{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;font-size:13px;color:#a9b5c3;line-height:1.7}
+  .cue-note b{color:#fff;font-weight:600}
+
+  /* ---------- 画布 ---------- */
+  .viz-card{padding:12px;display:flex;flex-direction:column;min-height:400px}
+  .viz-head{display:flex;align-items:center;gap:10px;padding:2px 6px 8px;font-size:12.5px;color:var(--dim)}
+  .viz-head b{color:var(--txt)}
+  .viz-head .lg{margin-left:auto;display:flex;gap:12px;font-size:11.5px}
+  .viz-head .lg span{display:flex;align-items:center;gap:5px}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block}
+  .canvas-box{position:relative;flex:1;min-height:334px;border-radius:12px;background:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.028) 0 1px,transparent 1px 34px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.028) 0 1px,transparent 1px 34px),
+    rgba(0,0,0,.28);overflow:hidden}
+  canvas{display:block;position:absolute;inset:0}
+
+  /* ---------- 控制条 ---------- */
+  .controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:16px;padding:12px 14px}
+  button{
+    font:inherit;font-size:14px;color:var(--txt);background:rgba(255,255,255,.06);
+    border:1px solid var(--line);border-radius:10px;padding:9px 15px;cursor:pointer;
+    transition:.14s;line-height:1
+  }
+  button:hover{background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.22)}
+  button:active{transform:translateY(1px)}
+  button.primary{background:linear-gradient(180deg,#f7b545,#e08f16);border-color:#f5a623;color:#241500;font-weight:700;box-shadow:0 6px 20px rgba(245,166,35,.25)}
+  button.toggle.on{background:rgba(245,166,35,.9);color:#241500;border-color:#f5a623;font-weight:700}
+  .sep{width:1px;height:26px;background:var(--line);margin:0 2px}
+  .field{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--dim)}
+  .field input[type=range]{width:120px;accent-color:var(--orange)}
+  .field output{font:12px var(--mono);color:var(--txt);min-width:42px;text-align:right}
+  .speeds{display:flex;gap:4px}
+  .speeds button{padding:7px 10px;font-size:12.5px;font-family:var(--mono);border-radius:8px}
+
+  /* ---------- 分段表 ---------- */
+  .tablecard{margin-top:16px;padding:16px 18px 18px}
+  .tablecard h2,.notesc h2{font-size:14px;margin:0 0 12px;letter-spacing:.6px;color:var(--dim);font-weight:600}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top}
+  th{font:11.5px/1.4 var(--mono);color:var(--dim);font-weight:500;text-transform:uppercase;letter-spacing:.5px}
+  tr.on td{background:rgba(255,255,255,.055)}
+  td.n{font-family:var(--mono);white-space:nowrap;color:#cfd8e3}
+  td.dir{white-space:nowrap;font-weight:700}
+  td.dir .g{font-size:16px;margin-right:5px}
+  .pill{font:11px/1 var(--mono);padding:4px 7px;border-radius:6px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  td.note{color:#b8c3d0;font-size:12.5px;line-height:1.5}
+
+  .notesc{margin-top:16px;padding:16px 18px;color:#b8c3d0;font-size:13px;line-height:1.7}
+  .notesc ul{margin:6px 0 0;padding-left:20px}
+  .notesc li{margin:4px 0}
+  .notesc a{color:var(--left);text-decoration:none;border-bottom:1px dotted rgba(79,163,255,.5)}
+  kbd{font:11.5px var(--mono);background:rgba(255,255,255,.09);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 5px;color:#fff}
+
+  /* 大屏模式 */
+  body.big .tablecard,body.big .notesc,body.big .ticks,body.big header.top .badges{display:none}
+  body.big .wrap{max-width:min(1500px,96vw);padding-top:14px}
+  body.big .grid{grid-template-columns:1fr 1fr}
+  body.big .arrow{font-size:150px;width:190px}
+  body.big .cue-title{font-size:40px}
+  body.big .cue{min-height:200px}
+  body.big .timeline{height:52px}
+  @media(max-width:920px){body.big .grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <h1><b>AK-47</b> 压枪分段提醒器 <span style="color:var(--dim);font-size:13px;font-weight:400">CS2 · 逐发语音/音效提示</span></h1>
+    <div class="badges">
+      <span class="badge">射速 <b>600 RPM</b></span>
+      <span class="badge">间隔 <b>0.1 s/发</b></span>
+      <span class="badge">弹容 <b>30 发</b></span>
+      <span class="badge">全扫 <b>3.0 s</b></span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <!-- 左：实时提示 -->
+    <section class="card cue-card">
+      <div class="cue">
+        <div class="arrow" id="arrow">↓</div>
+        <div class="cue-main">
+          <div class="cue-title" id="cueTitle">鼠标往 <span>正下方</span> 压</div>
+          <div class="cue-sub" id="cueSub">第 <b>1</b> 发 · 第 <b>1</b>/6 段 · 强度 <b>强</b></div>
+        </div>
+      </div>
+
+      <div class="timeline" id="timeline">
+        <div class="playhead" id="playhead"></div>
+      </div>
+      <div class="ticks" id="ticks"></div>
+      <div class="cue-note" id="cueNote"></div>
+    </section>
+
+    <!-- 右：弹道示意 -->
+    <section class="card viz-card">
+      <div class="viz-head">
+        <span>弹道示意（红点为当前发，箭头为鼠标应拉方向）</span>
+        <span class="lg">
+          <span><i class="dot" style="background:var(--orange)"></i>直下</span>
+          <span><i class="dot" style="background:var(--right)"></i>右下</span>
+          <span><i class="dot" style="background:var(--left)"></i>左下</span>
+        </span>
+      </div>
+      <div class="canvas-box"><canvas id="canvas"></canvas></div>
+    </section>
+  </div>
+
+  <section class="card controls">
+    <button class="primary" id="btnPlay">▶ 开始 (空格)</button>
+    <button id="btnReset">重置 (R)</button>
+    <div class="sep"></div>
+    <div class="field">
+      <span>速度</span>
+      <div class="speeds" id="speeds">
+        <button data-sp="0.5">0.5×</button>
+        <button data-sp="0.75">0.75×</button>
+        <button data-sp="1" class="toggle on">1×</button>
+        <button data-sp="1.5">1.5×</button>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div class="field">
+      <span>提前量</span>
+      <input type="range" id="lead" min="0" max="250" step="10" value="80">
+      <output id="leadOut">80ms</output>
+    </div>
+    <div class="sep"></div>
+    <button class="toggle on" id="btnSound">音效</button>
+    <button class="toggle on" id="btnVoice">语音</button>
+    <button class="toggle on" id="btnLoop">循环</button>
+    <button class="toggle" id="btnBig" style="margin-left:auto">大屏模式 (F)</button>
+  </section>
+
+  <section class="card tablecard">
+    <h2>分段速查表 —— 什么时候该往哪个方向拉</h2>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:88px">发数</th>
+          <th style="width:132px">时间</th>
+          <th style="width:120px">鼠标方向</th>
+          <th style="width:64px">强度</th>
+          <th>要点</th>
+        </tr>
+      </thead>
+      <tbody id="segBody"></tbody>
+    </table>
+  </section>
+
+  <section class="card notesc">
+    <h2>怎么用 / 训练要点</h2>
+    <ul>
+      <li>把本页放在<b>第二块屏</b>或手机/平板上，游戏里对着墙（或练枪图）扫射，跟着箭头和语音节奏拉鼠标。</li>
+      <li><b>提前量</b>默认 80ms：提示比子弹早出现 80ms。人手从听到指令到拉出鼠标有 100~200ms 延迟，所以提示必须抢在弹道前面；觉得总是慢半拍就把提前量调到 120~150ms。</li>
+      <li>先用 <kbd>0.5×</kbd> 慢速把 6 段方向练成肌肉记忆，再上 <kbd>1×</kbd> 原速。</li>
+      <li>实战建议：<b>前 10 发（1.0s 内）</b>练到能全部落在人头/身上即可赢下绝大多数对枪；<b>20 发以后</b>弹道抖动最大，只在贴身距离全扫。</li>
+      <li>快捷键：<kbd>空格</kbd> 开始/暂停、<kbd>R</kbd> 重置、<kbd>F</kbd> 大屏、<kbd>1~4</kbd> 切速度。</li>
+    </ul>
+    <h2 style="margin-top:16px">说明与数据来源</h2>
+    <ul>
+      <li>参数：AK-47 循环射速 600 发/分 → 每发间隔 0.1s，30 发全扫约 3.0s（与 <a href="https://op.gg/cs2/spray-patterns/ak47" target="_blank" rel="noreferrer">OP.GG 喷弹图样</a> 页标的 10.0 发/秒一致）。</li>
+      <li>分段方向综合自 <a href="https://counterstrikewiki.com/Spray_Patterns_and_Recoil_Control" target="_blank" rel="noreferrer">CS2 Wiki 压枪条目</a> 与 <a href="https://critfeed.com/ak-recoil-cs2/" target="_blank" rel="noreferrer">CritFeed AK recoil 指南</a> 的“1-4 直下 / 5-9 偏左 / 之后左右摆动”共识，并统一换算成“鼠标该往哪拉”。</li>
+      <li>右侧弹道图为<b>示意</b>（等比例手绘的 AK 弹道骨架），用于理解形状与节奏；每一发的方向提示以分段表为准。想微调可直接改源码里的 <code>PATTERN</code> / <code>SEGMENTS</code> 常量。</li>
+    </ul>
+  </section>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ===================== 可调参数 ===================== */
+  const RATE_HZ = 10;              // 600 RPM
+  const DT = 1 / RATE_HZ;          // 0.1s / 发
+  const N = 30;                    // 弹容
+  const TOTAL = N * DT;            // 3.0s
+
+  // 弹道骨架：x 向右为正，y 向上为正（相对首发的偏移，仅示意形状）
+  const PATTERN = [
+    [0.0, 0.0], [0.3, 3.2], [0.5, 6.4], [0.6, 9.6], [0.4, 12.8], [0.0, 16.0],
+    [-0.8, 19.2], [-1.8, 22.2], [-2.6, 25.0], [-1.4, 27.6], [1.5, 29.8], [5.2, 31.6],
+    [9.0, 32.8], [11.5, 34.2], [12.4, 35.8], [11.0, 37.4], [7.0, 38.6], [2.0, 39.6],
+    [-2.5, 40.6], [-4.5, 41.8], [-3.2, 43.0], [0.5, 44.0], [5.0, 44.8], [9.0, 45.6],
+    [11.0, 46.6], [10.0, 47.8], [6.0, 48.8], [1.0, 49.6], [-4.0, 50.2], [-8.0, 50.8]
+  ];
+
+  // 鼠标补偿方向表（分段规则）
+  const SEGMENTS = [
+    { from: 1,  to: 4,  dir: "down",      strength: "强", note: "首发射在准星上，第 2 发起枪口猛抬。这段垂直量最大，要快速、匀速地下压，别一下压到底。" },
+    { from: 5,  to: 8,  dir: "downRight", strength: "弱", note: "弹道开始轻微向左偏，右手留一点余量，为下一段的大幅左拉做过渡。" },
+    { from: 9,  to: 14, dir: "downLeft",  strength: "强", note: "弹道向右甩出整条弹道里最大的一段。只往下压必打空，这里必须主动往左拉（最容易漏掉的一段）。" },
+    { from: 15, to: 19, dir: "downRight", strength: "中", note: "弹道回摆向左，鼠标反向往右带，水平幅度比上一段小。" },
+    { from: 20, to: 24, dir: "downLeft",  strength: "中", note: "第二次向右摆，幅度略小、节奏更急，手腕要跟上。" },
+    { from: 25, to: 30, dir: "downRight", strength: "中", note: "收尾向左上方飘且抖动最大，命中率最低；实战到这个距离建议停枪重新定位。" }
+  ];
+
+  const DIRS = {
+    down:      { glyph: "↓", name: "正下方", verb: "垂直下压", color: "#f5a623", vx: 0,    vy: 1,    cls: "d-down",  seg: "s-down"  },
+    downRight: { glyph: "↘", name: "右下方", verb: "往右下带", color: "#ff6b5a", vx: 0.45, vy: 1,    cls: "d-right", seg: "s-right" },
+    downLeft:  { glyph: "↙", name: "左下方", verb: "往左下拉", color: "#4fa3ff", vx: -0.45, vy: 1,   cls: "d-left",  seg: "s-left"  }
+  };
+
+  /* ===================== 状态 ===================== */
+  const state = {
+    running: false,
+    elapsed: 0,      // 暂停时保存的秒数
+    startedAt: 0,    // performance.now()
+    speed: 1,
+    lead: 0.08,
+    sound: true,
+    voice: true,
+    loop: true,
+    big: false,
+    lastTick: -1,
+    lastSeg: -1
+  };
+
+  /* ===================== 工具 ===================== */
+  const $ = function (id) { return document.getElementById(id); };
+  const clamp = function (v, a, b) { return v < a ? a : v > b ? b : v; };
+  const fmt = function (s) { return s.toFixed(2) + "s"; };
+
+  function segIndexForShot(shot) {           // shot: 1-based
+    for (let k = 0; k < SEGMENTS.length; k++) {
+      if (shot >= SEGMENTS[k].from && shot <= SEGMENTS[k].to) return k;
+    }
+    return SEGMENTS.length - 1;
+  }
+  function shotAtTime(t) {                   // 0-based 索引
+    return clamp(Math.floor(t / DT + 1e-9), 0, N - 1);
+  }
+  function segStartTime(k) { return (SEGMENTS[k].from - 1) * DT; }
+  function segEndTime(k) { return SEGMENTS[k].to * DT; }
+
+  /* ===================== 构建 UI ===================== */
+  const timeline = $("timeline");
+  const segEls = [];
+  SEGMENTS.forEach(function (s, k) {
+    const el = document.createElement("div");
+    const d = DIRS[s.dir];
+    el.className = "seg " + d.seg;
+    el.style.flex = String(s.to - s.from + 1);
+    el.textContent = s.from + "-" + s.to + " " + d.glyph;
+    el.title = "第 " + s.from + "~" + s.to + " 发 · " + fmt(segStartTime(k)) + " – " + fmt(segEndTime(k)) + " · " + d.name;
+    timeline.appendChild(el);
+    segEls.push(el);
+  });
+
+  const ticks = $("ticks");
+  const tickEls = [];
+  for (let i = 1; i <= N; i++) {
+    const s = SEGMENTS[segIndexForShot(i)];
+    const d = DIRS[s.dir];
+    const el = document.createElement("div");
+    el.className = "tick " + d.cls;
+    el.innerHTML = '<i>' + d.glyph + '</i>' + i;
+    el.title = "第 " + i + " 发 · " + fmt((i - 1) * DT) + " · 鼠标" + d.name;
+    ticks.appendChild(el);
+    tickEls.push(el);
+  }
+
+  const segBody = $("segBody");
+  const rowEls = [];
+  SEGMENTS.forEach(function (s, k) {
+    const d = DIRS[s.dir];
+    const tr = document.createElement("tr");
+    tr.innerHTML =
+      '<td class="n">' + s.from + " – " + s.to + "</td>" +
+      '<td class="n">' + fmt(segStartTime(k)) + " – " + fmt(segEndTime(k)) + "</td>" +
+      '<td class="dir" style="color:' + d.color + '"><span class="g">' + d.glyph + "</span>" + d.verb + "</td>" +
+      '<td><span class="pill">' + s.strength + "</span></td>" +
+      '<td class="note">' + s.note + "</td>";
+    segBody.appendChild(tr);
+    rowEls.push(tr);
+  });
+
+  /* ===================== 音频 ===================== */
+  let actx = null;
+  function audio() {
+    if (!actx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      actx = new AC();
+    }
+    if (actx.state === "suspended") actx.resume();
+    return actx;
+  }
+  function beep(freq, dur, gain, type) {
+    if (!state.sound) return;
+    const ac = audio(); if (!ac) return;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type || "square";
+    o.frequency.value = freq;
+    g.gain.setValueAtTime(0.0001, ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(gain, ac.currentTime + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur);
+    o.connect(g); g.connect(ac.destination);
+    o.start(); o.stop(ac.currentTime + dur + 0.02);
+  }
+  let zhVoice = null;
+  function pickVoice() {
+    if (!("speechSynthesis" in window)) return;
+    const vs = window.speechSynthesis.getVoices() || [];
+    for (let i = 0; i < vs.length; i++) {
+      if (/zh[-_]?CN|Chinese|中文|普通话/i.test(vs[i].lang + " " + vs[i].name)) { zhVoice = vs[i]; break; }
+    }
+  }
+  if ("speechSynthesis" in window) {
+    pickVoice();
+    window.speechSynthesis.onvoiceschanged = pickVoice;
+  }
+  function say(text) {
+    if (!state.voice || !("speechSynthesis" in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = "zh-CN"; u.rate = 1.9; u.pitch = 1.05; u.volume = 1;
+      if (zhVoice) u.voice = zhVoice;
+      window.speechSynthesis.speak(u);
+    } catch (e) { /* 忽略语音不可用 */ }
+  }
+
+  /* ===================== 画面 ===================== */
+  const cv = $("canvas"), ctx = cv.getContext("2d");
+  let VW = 0, VH = 0;
+
+  function resize() {
+    const box = cv.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    VW = Math.max(200, Math.round(box.width));
+    VH = Math.max(200, Math.round(box.height));
+    cv.width = Math.round(VW * dpr);
+    cv.height = Math.round(VH * dpr);
+    cv.style.width = VW + "px";
+    cv.style.height = VH + "px";
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(state.cueShot || 0, state.cueSeg);
+  }
+
+  function mapper() {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < PATTERN.length; i++) {
+      const p = PATTERN[i];
+      if (p[0] < minX) minX = p[0];
+      if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1];
+      if (p[1] > maxY) maxY = p[1];
+    }
+    const padX = 50, padY = 64;
+    const spanX = Math.max(1e-6, maxX - minX), spanY = Math.max(1e-6, maxY - minY);
+    const s = Math.min((VW - padX * 2) / spanX, (VH - padY * 2) / spanY);
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    return {
+      s: s,
+      fx: function (x) { return VW / 2 + (x - cx) * s; },
+      fy: function (y) { return VH / 2 - (y - cy) * s; }
+    };
+  }
+
+  function draw(shotIdx, segIdx) {
+    if (!VW || !VH) return;
+    if (typeof segIdx !== "number") segIdx = segIndexForShot(shotIdx + 1);
+    const m = mapper();
+    ctx.clearRect(0, 0, VW, VH);
+
+    // 连接线
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const px = m.fx(PATTERN[i][0]), py = m.fy(PATTERN[i][1]);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = "rgba(255,255,255,.16)";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    // 弹孔
+    for (let i = 0; i < N; i++) {
+      const px = m.fx(PATTERN[i][0]), py = m.fy(PATTERN[i][1]);
+      const isCur = i === shotIdx;
+      const done = i < shotIdx;
+      if (isCur) {
+        ctx.beginPath();
+        ctx.arc(px, py, 11, 0, Math.PI * 2);
+        ctx.fillStyle = "rgba(245,166,35,.16)";
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(px, py, isCur ? 5.2 : (done ? 3.4 : 2.6), 0, Math.PI * 2);
+      ctx.fillStyle = isCur ? "#fff" : (done ? "rgba(245,166,35,.95)" : "rgba(255,255,255,.30)");
+      ctx.fill();
+      // 编号
+      if (isCur || i === 0 || (i + 1) % 5 === 0) {
+        ctx.font = (isCur ? "700 12px " : "11px ") + "Consolas,monospace";
+        ctx.fillStyle = isCur ? "#fff" : "rgba(255,255,255,.42)";
+        ctx.textAlign = "left";
+        ctx.fillText(String(i + 1), px + 8, py - 6);
+      }
+    }
+
+    // 鼠标方向箭头
+    const seg = SEGMENTS[segIdx];
+    const d = DIRS[seg.dir];
+    const cur = PATTERN[shotIdx];
+    const x0 = m.fx(cur[0]), y0 = m.fy(cur[1]);
+    const len = Math.hypot(d.vx, d.vy);
+    const ux = d.vx / len, uy = d.vy / len;
+    const L = 46;
+    const x1 = x0 + ux * L, y1 = y0 + uy * L;
+
+    ctx.save();
+    ctx.strokeStyle = d.color;
+    ctx.fillStyle = d.color;
+    ctx.lineWidth = 3.4;
+    ctx.lineCap = "round";
+    ctx.shadowColor = d.color;
+    ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    // 箭头头部
+    const ang = Math.atan2(uy, ux);
+    ctx.beginPath();
+    ctx.moveTo(x1 + Math.cos(ang) * 9, y1 + Math.sin(ang) * 9);
+    ctx.lineTo(x1 + Math.cos(ang + 2.5) * 12, y1 + Math.sin(ang + 2.5) * 12);
+    ctx.lineTo(x1 + Math.cos(ang - 2.5) * 12, y1 + Math.sin(ang - 2.5) * 12);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+
+    // 文字标注（带底色，避免和弹孔重叠看不清）
+    ctx.save();
+    ctx.font = "700 12px -apple-system,Segoe UI,Microsoft YaHei,sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    const txt = "鼠标" + d.name;
+    const tw = ctx.measureText(txt).width;
+    const tx = clamp(x1 + ux * 16 + 8, 6, VW - tw - 16);
+    const ty = clamp(y1 + uy * 16 + 6, 16, VH - 14);
+    ctx.fillStyle = "rgba(7,10,14,.78)";
+    const bw = tw + 14, bh = 20;
+    const rx = tx - 7, ry = ty - bh / 2;
+    const rr = 6;
+    ctx.beginPath();
+    ctx.moveTo(rx + rr, ry);
+    ctx.arcTo(rx + bw, ry, rx + bw, ry + bh, rr);
+    ctx.arcTo(rx + bw, ry + bh, rx, ry + bh, rr);
+    ctx.arcTo(rx, ry + bh, rx, ry, rr);
+    ctx.arcTo(rx, ry, rx + bw, ry, rr);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = d.color;
+    ctx.fillText(txt, tx, ty);
+    ctx.restore();
+  }
+
+  /* ===================== 提示刷新 ===================== */
+  const arrowEl = $("arrow");
+  const cueTitleEl = $("cueTitle");
+  const cueSubEl = $("cueSub");
+  const cueNoteEl = $("cueNote");
+  const playhead = $("playhead");
+  const btnPlay = $("btnPlay");
+
+  function paintCue(segIdx, shot, cueT) {
+    const s = SEGMENTS[segIdx], d = DIRS[s.dir];
+    arrowEl.textContent = d.glyph;
+    arrowEl.style.color = d.color;
+    cueTitleEl.innerHTML = "鼠标往 <span style=\"color:" + d.color + "\">" + d.name + "</span> " +
+      (s.dir === "down" ? "压" : "拉");
+    cueSubEl.innerHTML = "第 <b>" + shot + "</b> 发 · 第 <b>" + (segIdx + 1) + "</b>/" + SEGMENTS.length +
+      " 段 · 强度 <b>" + s.strength + "</b> · " + fmt(segStartTime(segIdx)) + " – " + fmt(segEndTime(segIdx)) +
+      " · 提前 " + Math.round(state.lead * 1000) + "ms";
+
+    for (let k = 0; k < segEls.length; k++) segEls[k].classList.toggle("on", k === segIdx);
+    for (let k = 0; k < rowEls.length; k++) rowEls[k].classList.toggle("on", k === segIdx);
+    cueNoteEl.innerHTML = "<b>第 " + (segIdx + 1) + " 段要点：</b>" + s.note;
+  }
+
+  function paintProgress(t, shotIdx) {
+    playhead.style.left = (clamp(t / TOTAL, 0, 1) * 100) + "%";
+    for (let i = 0; i < tickEls.length; i++) {
+      tickEls[i].classList.toggle("on", i === shotIdx);
+      tickEls[i].classList.toggle("done", i < shotIdx);
+    }
+  }
+
+  /* ===================== 时钟 ===================== */
+  let rafId = null;
+
+  function currentT() {
+    if (!state.running) return state.elapsed;
+    return state.elapsed + (performance.now() - state.startedAt) / 1000 * state.speed;
+  }
+
+  // 刷新画面与提示（silent = 静默刷新，不发声）
+  function render(silent) {
+    const t = Math.min(currentT(), TOTAL);
+    const shotIdx = shotAtTime(t);                 // 0-based
+    state.lastShot = shotIdx;
+
+    const cueT = Math.min(t + state.lead, TOTAL);
+    const cueShotIdx = shotAtTime(cueT);
+    const segIdx = segIndexForShot(cueShotIdx + 1);
+    state.cueShot = cueShotIdx;
+    state.cueSeg = segIdx;
+
+    if (!silent) {
+      // 逐发音效（节拍器）
+      const tickIdx = Math.floor(t / DT + 1e-9);
+      if (tickIdx !== state.lastTick && tickIdx < N) {
+        state.lastTick = tickIdx;
+        beep(1250, 0.035, 0.05, "square");
+      }
+      // 分段切换：双音 + 语音
+      if (segIdx !== state.lastSeg) {
+        const word = SEGMENTS[segIdx].dir === "down" ? "往下" : DIRS[SEGMENTS[segIdx].dir].name;
+        beep(760, 0.07, 0.10, "triangle");
+        setTimeout(function () { beep(1140, 0.09, 0.09, "triangle"); }, 70);
+        say(word);
+      }
+    }
+    if (silent || segIdx !== state.lastSeg) {
+      state.lastSeg = segIdx;
+      paintCue(segIdx, cueShotIdx + 1, cueT);
+    }
+    paintProgress(t, cueShotIdx);
+    draw(cueShotIdx, segIdx);
+  }
+
+  function loop() {
+    if (!state.running) { rafId = null; return; }
+    if (currentT() >= TOTAL) {
+      if (state.loop) {
+        state.elapsed = 0;
+        state.startedAt = performance.now();
+        state.lastTick = -1;             // 保留 lastSeg，循环开始时重新播报第 1 段
+      } else {
+        pause(true);
+        return;
+      }
+    }
+    render(false);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function start() {
+    if (state.running) return;
+    if (state.elapsed >= TOTAL - 1e-6) state.elapsed = 0;
+    audio();                                  // 用户手势下解锁音频
+    state.running = true;
+    state.startedAt = performance.now();
+    btnPlay.textContent = "⏸ 暂停 (空格)";
+    state.lastTick = Math.floor(state.elapsed / DT + 1e-9) - 1;
+    render(false);
+    rafId = requestAnimationFrame(loop);
+  }
+
+  function pause(finished) {
+    if (!state.running) return;
+    state.elapsed = Math.min(TOTAL, state.elapsed + (performance.now() - state.startedAt) / 1000 * state.speed);
+    state.running = false;
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    btnPlay.textContent = finished ? "▶ 重播 (空格)" : "▶ 继续 (空格)";
+    if (finished) state.elapsed = TOTAL;
+    render(true);
+  }
+
+  function reset() {
+    if (rafId) { cancelAnimationFrame(rafId); rafId = null; }
+    state.running = false;
+    state.elapsed = 0;
+    state.lastTick = -1;
+    btnPlay.textContent = "▶ 开始 (空格)";
+    if ("speechSynthesis" in window) { try { window.speechSynthesis.cancel(); } catch (e) {} }
+    render(true);
+    state.lastSeg = -1;                 // 让下一次开始时重新播报第 1 段
+  }
+
+  /* ===================== 交互 ===================== */
+  btnPlay.addEventListener("click", function () { state.running ? pause(false) : start(); });
+  $("btnReset").addEventListener("click", reset);
+
+  timeline.addEventListener("click", function (ev) {
+    const r = timeline.getBoundingClientRect();
+    const ratio = clamp((ev.clientX - r.left) / r.width, 0, 1);
+    state.elapsed = ratio * TOTAL;
+    state.startedAt = performance.now();
+    state.lastTick = -1;
+    render(true);
+  });
+
+  const speedsBox = $("speeds");
+  speedsBox.addEventListener("click", function (ev) {
+    const sp = ev.target.getAttribute("data-sp");
+    if (!sp) return;
+    state.speed = parseFloat(sp);
+    const btns = speedsBox.querySelectorAll("button");
+    for (let i = 0; i < btns.length; i++) btns[i].classList.toggle("on", btns[i] === ev.target);
+  });
+
+  const leadInput = $("lead"), leadOut = $("leadOut");
+  leadInput.addEventListener("input", function () {
+    state.lead = clamp(parseFloat(leadInput.value), 0, 250) / 1000;
+    leadOut.textContent = leadInput.value + "ms";
+    render(true);
+  });
+
+  function toggleBtn(btn, key) {
+    btn.addEventListener("click", function () {
+      state[key] = !state[key];
+      btn.classList.toggle("on", state[key]);
+      if (key === "voice" && !state[key] && "speechSynthesis" in window) {
+        try { window.speechSynthesis.cancel(); } catch (e) {}
+      }
+    });
+  }
+  toggleBtn($("btnSound"), "sound");
+  toggleBtn($("btnVoice"), "voice");
+  toggleBtn($("btnLoop"), "loop");
+  $("btnBig").addEventListener("click", function () {
+    state.big = !state.big;
+    document.body.classList.toggle("big", state.big);
+    $("btnBig").classList.toggle("on", state.big);
+    setTimeout(resize, 30);
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    const tag = (ev.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || ev.repeat) return;
+    if (ev.code === "Space") {
+      if (tag === "button") return;          // 让获得焦点的按钮自己响应空格，避免双触发
+      ev.preventDefault();
+      state.running ? pause(false) : start();
+    } else if (ev.key === "r" || ev.key === "R") {
+      reset();
+    } else if (ev.key === "f" || ev.key === "F") {
+      $("btnBig").click();
+    } else if (ev.key >= "1" && ev.key <= "4") {
+      const idx = parseInt(ev.key, 10) - 1;
+      const btns = speedsBox.querySelectorAll("button");
+      if (btns[idx]) btns[idx].click();
+    }
+  });
+
+  window.addEventListener("resize", resize);
+  if (window.ResizeObserver) new ResizeObserver(resize).observe(cv.parentElement);
+
+  /* ===================== 启动 ===================== */
+  resize();
+  render(true);
+  state.lastSeg = -1;      // 首次点“开始”时播报第 1 段
+
+  // 支持 ?t=1.4 跳到某一时刻、?big=1 直接进大屏模式（方便截图/测试）
+  (function initFromUrl() {
+    let q;
+    try { q = new URLSearchParams(location.search); } catch (e) { return; }
+    if (q.get("big") === "1") { $("btnBig").click(); }
+    const t = parseFloat(q.get("t"));
+    if (isFinite(t) && t > 0) {
+      state.elapsed = Math.min(t, TOTAL);
+      render(true);
+      state.lastSeg = -1;
+    }
+  })();
+})();
+</script>
+</body>
+</html>

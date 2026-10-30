@@ -1,0 +1,24 @@
+# 编译产物
+*.exe
+bin/
+obj/
+
+# 自检/调试产物
+self-test.txt
+selftest.txt
+demo.log
+say.log
+*.log
+ui.png
+*.err.txt
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 编辑器
+.vs/
+.vscode/
+*.user
+*.suo
