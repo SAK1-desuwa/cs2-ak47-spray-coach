@@ -37,8 +37,8 @@ Directions are always **where the mouse goes** (= opposite of where the pattern 
 
 - **Hold LMB to start, release to stop** — global mouse listener, so it works while you're in-game (passive only, nothing injected)
 - **Progressive voice speed**: +1 per completed spray (cap +6), toggleable
-- **Gunshot SFX** (v1.1): a procedurally synthesised AK report on every round — 3 styles (standard / heavy / crisp) with volume control
-- **Multiple voice characters** (v1.1): presets `standard / loli (high-pitched) / girl / deep male / robot`, plus fine pitch (-50%…+60%) and rate (0…6); or pick any SAPI voice installed on the system
+- **Custom gunshot SFX** (v1.2): every round plays a shot sound — the built-in synthesised AK report by default, or **any local wav/mp3 you pick**, with volume control and a preview button
+- **Fully custom voice** (v1.2): the "loli/girl/robot" presets are gone — just drag pitch (-50%…+60%) and rate (0…6) yourself, or pick any SAPI voice installed on the system
 - **Lead time 0–3000 ms** (v1.1), no fixed steps
 - **Custom wallpaper** (v1.1): any png/jpg as the window background, cover-fit with adjustable dimming (0–92%)
 - Custom WAV for the segment-change cue
