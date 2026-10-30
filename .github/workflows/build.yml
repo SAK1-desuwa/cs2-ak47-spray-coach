@@ -12,13 +12,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve WPF assemblies
+        shell: pwsh
+        run: |
+          # MP3 解码要用 WPF MediaPlayer
+          foreach ($n in @('PresentationCore','WindowsBase')) {
+            $found = $null
+            foreach ($root in @(
+                "$env:WINDIR\Microsoft.NET\assembly\GAC_MSIL\$n",
+                "$env:WINDIR\Microsoft.NET\assembly\GAC_64\$n",
+                "$env:WINDIR\Microsoft.NET\assembly\GAC_32\$n")) {
+              if (Test-Path $root) {
+                $found = Get-ChildItem $root -Recurse -Filter "$n.dll" -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($found) { break }
+              }
+            }
+            if (-not $found) { throw "$n.dll not found" }
+            Write-Host "$n = $($found.FullName)"
+            "$n=$($found.FullName)" | Out-File -FilePath "$env:GITHUB_ENV" -Append -Encoding utf8
+          }
+
       - name: Compile with the bundled C# compiler
         shell: pwsh
         run: |
           $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
           if (-not (Test-Path $csc)) { throw "csc.exe not found" }
+          $refs = @("/r:$env:PresentationCore", "/r:$env:WindowsBase")
           & $csc /nologo /target:winexe /platform:x64 /optimize+ /codepage:65001 `
-                 /win32icon:app.ico /out:AK47SprayCoach.exe src\Ak47SprayCoach.cs
+                 /win32icon:app.ico @refs /out:AK47SprayCoach.exe src\Ak47SprayCoach.cs
           if ($LASTEXITCODE -ne 0) { throw "build failed: $LASTEXITCODE" }
           Get-Item AK47SprayCoach.exe | Select-Object Name, Length
 
